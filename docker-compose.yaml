@@ -1,0 +1,31 @@
+services:
+  merkle-oracle-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./config.yaml:/data/config.yaml
+      - ./assets:/data/assets
+    command: -config ./config.yaml
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:9091:9091"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+
+volumes:
+  storage_data:
+  postgres_data:

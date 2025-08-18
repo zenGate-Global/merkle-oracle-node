@@ -1,0 +1,13 @@
+{
+  "data": [],
+  "trieData": {
+    "insertions": [{ "key": "0x123", "value": "0x456" }],
+    "updates": [{ "key": "0x123", "value": "0x456" }],
+    "deletions": [{ "key": "0x123" }]
+  },
+  "currentMerkleRoot": "",
+  "previousMerkleRoot": "",
+  "previousFileReference": "",
+  "trieLibrary": "",
+  "createdAt": 0
+}

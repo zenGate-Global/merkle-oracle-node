@@ -1,0 +1,64 @@
+storage:
+  url: "postgresql://postgres:postgres@localhost:5432/postgres"
+
+indexer:
+  address: ""
+  socketPath: ""
+  interceptHash: "b50cba10fb787c0c21df89966ae247bba790fe1fae57c8cda7042b0bad429370"
+  interceptSlot: 88838942
+  txExpirationBlockNumber: 3
+  restartThreshold: 3
+  restartTimeWindow: 10m
+
+metrics:
+  listenAddress: "0.0.0.0"
+  listenPort: 9094
+
+debug:
+  listenAddress: "0.0.0.0"
+  listenPort: 9093
+
+submit:
+  url: "https://cardano-preview.blockfrost.io/api/v0/tx/submit"
+  blockFrostProjectID: ""
+
+wallet:
+  mnemonic: ""
+
+logging:
+  level: "info"
+  log_discord_webook_url: "Your Discord webhook URL"
+  notification_discord_webhook_url: "Your notification webhook URL"
+  explorer_base_uri: ""
+  log_file_name: "mainnet.log"
+  log_directory: "assets/logs"
+  max_log_file_size: 100 # MBs
+  max_backups: 3
+  max_age: 30 # days
+
+api:
+  blockfrostURL: ""
+  blockfrostApiKey: ""
+  ogmiosURL: ""
+  kupoURL: ""
+  utxorpcURL: ""
+  maestroApiKey: ""
+
+cloud:
+  gcpCredentialJSONPath: "./gcp.json"
+  bucketName: "oracle-bucket-dev"
+
+oracle:
+  updateInterval: 2m
+  baseURL: ""
+
+profile: "oracle-preview"
+network: "preview"
+
+contract:
+  contractAddress: ""
+  singletonPolicyId: ""
+  singletonName: "merkle_oracle_singleton"
+  merkleOracleScriptRef:
+    txId: ""
+    index: 1
