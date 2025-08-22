@@ -11,7 +11,7 @@ require (
 	github.com/anthdm/hollywood v1.0.5
 	github.com/blinklabs-io/adder v0.31.0
 	github.com/blinklabs-io/bursa v0.11.0
-	github.com/blinklabs-io/gouroboros v0.130.1
+	github.com/blinklabs-io/gouroboros v0.131.0
 	github.com/blinklabs-io/merkle-patricia-forestry v0.1.5
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
@@ -65,7 +65,7 @@ require (
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.3-0.20250605095919-a68b42df202a // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/blinklabs-io/plutigo v0.0.3 // indirect
+	github.com/blinklabs-io/plutigo v0.0.4 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
