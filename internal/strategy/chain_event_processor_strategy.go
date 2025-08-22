@@ -799,16 +799,17 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		inputMap[ik] = struct{}{}
 	}
 
+	if hasConflict, conflicting := CheckInputConflicts(inputs...); hasConflict {
+		s.logger.Warnw(
+			"tx inputs conflict with pending tx; skipping",
+			"conflicting_tx", conflicting,
+			"potential_inputs", len(inputs),
+		)
+		return nil
+	}
+
 	submit := func() (string, error) {
 		txBytes, _ := txObj.Bytes()
-
-		if hasConflict, conflicting := CheckInputConflicts(inputs...); hasConflict {
-			return "", fmt.Errorf(
-				"tx inputs conflict with pending tx: %s",
-				conflicting,
-			)
-		}
-
 		return provider.SubmitTx(s.appCfg, s.provider, txBytes)
 	}
 
@@ -845,6 +846,15 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 			}
 			inputs = append(inputs, ik)
 			inputMap[ik] = struct{}{}
+		}
+
+		if hasConflict, conflicting := CheckInputConflicts(inputs...); hasConflict {
+			s.logger.Warnw(
+				"tx inputs conflict with pending tx; skipping",
+				"conflicting_tx", conflicting,
+				"potential_inputs", len(inputs),
+			)
+			return nil
 		}
 
 		txHash, err = submit()
