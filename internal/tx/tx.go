@@ -47,7 +47,7 @@ func BuildRecreateTx(
 	}
 
 	utxos, err := provider.GetUtxosByAddress(
-		context.TODO(),
+		context.Background(),
 		bursa.PaymentAddress,
 	)
 	if err != nil {
@@ -74,14 +74,14 @@ func BuildRecreateTx(
 	adminSingletonAssetNameString := hex.EncodeToString(adminSingletonAssetName)
 
 	multiSigUtxo, err := provider.GetUtxoByUnit(
-		context.TODO(),
+		context.Background(),
 		adminSingletonPolicyIdString+adminSingletonAssetNameString,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	tip, err := provider.GetTip(context.TODO())
+	tip, err := provider.GetTip(context.Background())
 
 	if err != nil {
 		return nil, err

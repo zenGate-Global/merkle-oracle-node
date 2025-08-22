@@ -20,7 +20,7 @@ func SubmitTx(
 ) (string, error) {
 	if cfg.Submit.Url != "" {
 		req, err := http.NewRequestWithContext(
-			context.TODO(),
+			context.Background(),
 			"POST",
 			cfg.Submit.Url,
 			bytes.NewReader(txBytes),
@@ -70,7 +70,7 @@ func SubmitTx(
 		return txHash, nil
 	}
 
-	txHash, err := provider.SubmitTx(context.TODO(), txBytes)
+	txHash, err := provider.SubmitTx(context.Background(), txBytes)
 	if err != nil {
 		return "", err
 	}
