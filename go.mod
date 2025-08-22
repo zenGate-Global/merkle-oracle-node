@@ -10,7 +10,7 @@ require (
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/anthdm/hollywood v1.0.5
 	github.com/blinklabs-io/adder v0.31.0
-	github.com/blinklabs-io/bursa v0.11.0
+	github.com/blinklabs-io/bursa v0.11.1
 	github.com/blinklabs-io/gouroboros v0.131.0
 	github.com/blinklabs-io/merkle-patricia-forestry v0.1.5
 	github.com/disgoorg/disgo v0.18.16
