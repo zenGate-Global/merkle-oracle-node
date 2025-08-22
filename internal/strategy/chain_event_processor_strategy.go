@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 	"zenGate-Global/merkle-oracle-node/internal/cloud"
@@ -292,7 +291,7 @@ type ChainEventProcessorActor struct {
 	lastSucessfullyIndexedSlot      uint64
 	lastSucessfullyIndexedBlockHash string
 
-	processedBlockMap map[string]bool
+	processedBlockMap map[BlockKey]bool
 
 	blockTransactionCountMap map[uint64]uint64
 }
@@ -322,19 +321,61 @@ func NewChainEventProcessorStrategy(
 			trieRootMismatchCount:           0,
 			lastSucessfullyIndexedSlot:      cfg.StartBlockSlot,
 			lastSucessfullyIndexedBlockHash: cfg.StartBlockHash,
-			processedBlockMap:               make(map[string]bool),
+			processedBlockMap:               make(map[BlockKey]bool),
 			blockTransactionCountMap:        make(map[uint64]uint64),
 		}
 	}
 }
 
-// createBlockKey creates a composite key from block number and block hash
+// BlockKey represents a composite key for identifying blocks uniquely
+// This ensures we can distinguish between different blocks with the same number due to rollbacks
+// and enables garbage collection based on slot numbers
+type BlockKey struct {
+	BlockNumber uint64 `json:"blockNumber"`
+	BlockHash   string `json:"blockHash"`
+	SlotNumber  uint64 `json:"slotNumber"`
+}
+
+// String returns a string representation of the BlockKey for logging purposes
+func (bk BlockKey) String() string {
+	return fmt.Sprintf("%d:%s:%d", bk.BlockNumber, bk.BlockHash, bk.SlotNumber)
+}
+
+// createBlockKey creates a composite key from block number, block hash, and slot number
 // This ensures we can distinguish between different blocks with the same number due to rollbacks
 func (s *ChainEventProcessorActor) createBlockKey(
 	blockNumber uint64,
 	blockHash string,
-) string {
-	return fmt.Sprintf("%d:%s", blockNumber, blockHash)
+	slotNumber uint64,
+) BlockKey {
+	return BlockKey{
+		BlockNumber: blockNumber,
+		BlockHash:   blockHash,
+		SlotNumber:  slotNumber,
+	}
+}
+
+// garbageCollectOldBlocks removes processed blocks with slot numbers less than N
+func (s *ChainEventProcessorActor) garbageCollectOldBlocks(cutoffSlot uint64) {
+	var removedBlocks []BlockKey
+	for blockKey := range s.processedBlockMap {
+		if blockKey.SlotNumber < cutoffSlot {
+			delete(s.processedBlockMap, blockKey)
+			removedBlocks = append(removedBlocks, blockKey)
+		}
+	}
+
+	if len(removedBlocks) > 0 {
+		s.logger.Debugf(
+			"Garbage collected %d old processed blocks (cutoff slot: %d)",
+			len(removedBlocks),
+			cutoffSlot,
+		)
+		s.logger.Debugf(
+			"Remaining processed blocks count: %d",
+			len(s.processedBlockMap),
+		)
+	}
 }
 
 func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
@@ -511,13 +552,13 @@ func (s *ChainEventProcessorActor) processBlockEvent(
 ) error {
 	blockNumber := event.EventContext.BlockNumber
 	blockHash := event.EventTransaction.BlockHash
-	blockKey := s.createBlockKey(blockNumber, blockHash)
+	slotNumber := event.EventContext.SlotNumber
+	blockKey := s.createBlockKey(blockNumber, blockHash, slotNumber)
 
 	if _, exists := s.processedBlockMap[blockKey]; exists {
 		s.logger.Infof(
-			"Block %d:%s already processed, skipping block",
-			blockNumber,
-			blockHash,
+			"Block %s already processed, skipping block",
+			blockKey.String(),
 		)
 		return nil
 	}
@@ -573,6 +614,9 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	if c := GetPendingTransactionCount(); c > 0 {
 		s.logger.Debugw("Current pending transactions", "count", c)
 	}
+
+	currentSlot := uint64(blockEvent.EventContext.SlotNumber)
+	s.garbageCollectOldBlocks(currentSlot - uint64(config.FinalitySlotsNeeded))
 
 	memTrie, err := s.db.GetInMemoryTrie()
 	if err != nil {
@@ -740,7 +784,6 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	uploadPayload.TrieData.Deletions = dels
 
 	// apply ops to local trie
-	currentSlot := uint64(blockEvent.EventContext.SlotNumber)
 	if err := s.applyTrieOperations(memTrie, ins, ups, dels, currentSlot); err != nil {
 		return err
 	}
@@ -1248,24 +1291,24 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		s.logger.Debugf("Trie state unchanged after rollback (root: %x)", originalRoot)
 	}
 
-	var deletedBlocks []string
+	var deletedBlocks []BlockKey
 	for blockKey := range s.processedBlockMap {
-		// extract block number from composite key (format: "blockNumber:blockHash")
-		if colonIndex := strings.Index(blockKey, ":"); colonIndex != -1 {
-			if blockNumberStr := blockKey[:colonIndex]; blockNumberStr != "" {
-				if blockNumber, err := strconv.ParseUint(blockNumberStr, 10, 64); err == nil {
-					if blockNumber > rollbackEvent.SlotNumber {
-						delete(s.processedBlockMap, blockKey)
-						deletedBlocks = append(deletedBlocks, blockKey)
-					}
-				}
-			}
+		// Check if block slot number is greater than rollback slot number
+		if blockKey.SlotNumber > rollbackEvent.SlotNumber {
+			delete(s.processedBlockMap, blockKey)
+			deletedBlocks = append(deletedBlocks, blockKey)
 		}
 	}
 
 	if len(deletedBlocks) > 0 {
-		s.logger.Debugf("Removed %d processed block entries for blocks > %d",
-			len(deletedBlocks), rollbackEvent.SlotNumber)
+		s.logger.Debugf(
+			"Removed %d processed block entries for blocks with slot > %d",
+			len(deletedBlocks),
+			rollbackEvent.SlotNumber,
+		)
+		for _, deletedBlock := range deletedBlocks {
+			s.logger.Debugf("Removed block: %s", deletedBlock.String())
+		}
 	}
 
 	return nil
