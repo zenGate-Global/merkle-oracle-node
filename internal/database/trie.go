@@ -100,8 +100,3 @@ func (d *Database) GetTrie() *mpf.Trie {
 	defer trieMtx.RUnlock()
 	return memoryTrie
 }
-
-func (d *Database) GarbageCollectTrie(cutoff uint64) error {
-	// TODO: implement garbage collection
-	return nil
-}

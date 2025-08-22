@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -392,15 +391,7 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 		}
 
 		if msg.TipReached {
-			// garbage collect around 1% of the time
-			if rand.Intn(100) == 0 {
-				s.logger.Info("garbage collecting accounts")
-				//TODO: implement gc for trie
-				if err := s.db.GarbageCollectTrie(msg.BlockEvent.Block.SlotNumber() - 129600); err != nil {
-					s.logger.Errorf("failed to garbage collect accounts: %v", err)
-				}
-				s.logger.Info("garbage collection complete")
-			}
+			s.logger.Debug("tip reached, block #%d", msg.BlockEvent.Block.BlockNumber())
 		}
 
 	case types.IndexerTransactionEvent:
