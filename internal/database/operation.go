@@ -155,7 +155,7 @@ func (d *Database) ApplyOracleFile(
 				}
 				vh := blake2b.Sum256(canon)
 				if e.OperationType == OpInsert {
-					logger.Infow(
+					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie set",
 						"key",
 						hex.EncodeToString(kh[:]),
@@ -163,7 +163,7 @@ func (d *Database) ApplyOracleFile(
 						hex.EncodeToString(vh[:]),
 					)
 				} else {
-					logger.Infow(
+					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie update",
 						"key",
 						hex.EncodeToString(kh[:]),
@@ -175,7 +175,7 @@ func (d *Database) ApplyOracleFile(
 					return err
 				}
 			case OpDelete:
-				logger.Infow(
+				logger.Debugw(
 					"TRIE_DEBUG(APPLY): trie delete",
 					"key",
 					hex.EncodeToString(kh[:]),
