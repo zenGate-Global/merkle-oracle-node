@@ -36,6 +36,235 @@ import (
 	apolloUTxO "github.com/Salvionied/apollo/serialization/UTxO"
 )
 
+type trieLike interface {
+	Hash() []byte
+	Has([]byte) bool
+	Update([]byte, []byte, uint64) error
+	Delete([]byte) error
+}
+
+type KVHex struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type KeyHex struct {
+	Key string `json:"key"`
+}
+
+func trim0x(s string) string {
+	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
+		return s[2:]
+	}
+	return s
+}
+
+func decodeHexBytes(s string) ([]byte, error) {
+	return hex.DecodeString(trim0x(s))
+}
+
+func (s *ChainEventProcessorActor) keyHashHex(objID, key string) string {
+	return hex.EncodeToString(s.db.Hash([]byte(objID + ":" + key)))
+}
+
+func (s *ChainEventProcessorActor) valueHashHex(v interface{}) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(s.db.Hash(b)), nil
+}
+
+func (s *ChainEventProcessorActor) withGuard(
+	slot uint64,
+	label string,
+	fn func() error,
+) {
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.RecordProcessingError("ChainEventProcessor", label+"Panic")
+			s.setProcessingFailed(
+				slot,
+				fmt.Sprintf("panic in %s: %v", label, r),
+			)
+		}
+	}()
+	if err := fn(); err != nil {
+		metrics.RecordProcessingError("ChainEventProcessor", label)
+		s.setProcessingFailed(slot, fmt.Sprintf("%s error: %v", label, err))
+	}
+}
+
+// getOrFetchValidatorUTxO fetches/caches the singleton UTxO
+func (s *ChainEventProcessorActor) getOrFetchValidatorUTxO(
+	ctx context.Context,
+) (*apolloUTxO.UTxO, error) {
+	if cu := GetGlobalValidatorUtxo(); cu != nil {
+		s.logger.Debug("Using cached validator UTXO")
+		// shallow copy
+		return &apolloUTxO.UTxO{Input: cu.Input, Output: cu.Output}, nil
+	}
+	s.logger.Debug("Cached validator UTXO not available, querying provider...")
+	singletonPolicyId := s.appCfg.Contract.SingletonPolicyId
+	singletonName := s.appCfg.Contract.SingletonName
+	singletonId := singletonPolicyId + hex.EncodeToString([]byte(singletonName))
+
+	utxo, err := s.provider.GetUtxoByUnit(ctx, singletonId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contract utxo: %w", err)
+	}
+	SetGlobalValidatorUtxo(utxo)
+	return utxo, nil
+}
+
+// decodes the validator datum from a UTxO into our struct and also returns its CBOR bytes
+func (s *ChainEventProcessorActor) decodeValidatorDatumFromUTxO(
+	utxo *apolloUTxO.UTxO,
+) (*tx.MerkleOracleDatum, []byte, error) {
+	validatorDatum := utxo.Output.GetDatum().ToDatum()
+	cborBytes, err := gouroborosCbor.Encode(validatorDatum)
+	if err != nil {
+		return nil, nil, fmt.Errorf(
+			"failed to marshal validator datum to CBOR: %w",
+			err,
+		)
+	}
+	decoded, err := tx.DecodeMerkleOracleDatum(hex.EncodeToString(cborBytes))
+	if err != nil {
+		return nil, nil, fmt.Errorf(
+			"failed to decode contract utxo datum: %w",
+			err,
+		)
+	}
+	return decoded, cborBytes, nil
+}
+
+// Computes trie diffs (insert/update/delete) between oracleData and currentCloudData
+func (s *ChainEventProcessorActor) diffTrieOps(
+	mem trieLike,
+	oracleData, currentCloudData []map[string]interface{},
+) (insertions []KVHex, updates []KVHex, deletions []KeyHex) {
+
+	// get current keys from cloud snapshot
+	currentKeys := make(map[string]bool)
+	for _, item := range currentCloudData {
+		objID, ok := item["object_id"].(string)
+		if !ok || objID == "" {
+			continue
+		}
+		for k := range item {
+			if k == "object_id" {
+				continue
+			}
+			keyHex := s.keyHashHex(objID, k)
+			currentKeys[keyHex] = true
+		}
+	}
+
+	oracleKeys := make(map[string]bool)
+
+	// decide insert vs update using in-memory trie
+	for _, item := range oracleData {
+		objID, ok := item["object_id"].(string)
+		if !ok || objID == "" {
+			continue
+		}
+		for k, v := range item {
+			if k == "object_id" {
+				continue
+			}
+			keyHash := s.db.Hash([]byte(objID + ":" + k))
+			keyHex := hex.EncodeToString(keyHash)
+			valHex, err := s.valueHashHex(v)
+			if err != nil {
+				s.logger.Errorf(
+					"failed to hash value for %s:%s: %v",
+					objID,
+					k,
+					err,
+				)
+				continue
+			}
+			oracleKeys[keyHex] = true
+			if mem.Has(keyHash) {
+				updates = append(updates, KVHex{Key: keyHex, Value: valHex})
+			} else {
+				insertions = append(insertions, KVHex{Key: keyHex, Value: valHex})
+			}
+		}
+	}
+
+	// missing keys means deletions
+	for keyHex := range currentKeys {
+		if !oracleKeys[keyHex] {
+			deletions = append(deletions, KeyHex{Key: keyHex})
+		}
+	}
+
+	return
+}
+
+// apply the hex-encoded trie ops to the in-memory trie in a single place
+func (s *ChainEventProcessorActor) applyTrieOperations(
+	mem trieLike,
+	insertions []KVHex,
+	updates []KVHex,
+	deletions []KeyHex,
+	slot uint64,
+) error {
+	for _, in := range insertions {
+		kb, err := decodeHexBytes(in.Key)
+		if err != nil {
+			return fmt.Errorf("decode insertion key %s: %w", in.Key, err)
+		}
+		vb, err := decodeHexBytes(in.Value)
+		if err != nil {
+			return fmt.Errorf("decode insertion value %s: %w", in.Value, err)
+		}
+		s.logger.Debugw(
+			"TRIE_DEBUG(BUILD): trie insert",
+			"key",
+			in.Key,
+			"value",
+			in.Value,
+		)
+		if err := mem.Update(kb, vb, slot); err != nil {
+			return fmt.Errorf("trie insert failed: %w", err)
+		}
+	}
+	for _, up := range updates {
+		kb, err := decodeHexBytes(up.Key)
+		if err != nil {
+			return fmt.Errorf("decode update key %s: %w", up.Key, err)
+		}
+		vb, err := decodeHexBytes(up.Value)
+		if err != nil {
+			return fmt.Errorf("decode update value %s: %w", up.Value, err)
+		}
+		s.logger.Debugw(
+			"TRIE_DEBUG(BUILD): trie update",
+			"key",
+			up.Key,
+			"value",
+			up.Value,
+		)
+		if err := mem.Update(kb, vb, slot); err != nil {
+			return fmt.Errorf("trie update failed: %w", err)
+		}
+	}
+	for _, del := range deletions {
+		kb, err := decodeHexBytes(del.Key)
+		if err != nil {
+			return fmt.Errorf("decode deletion key %s: %w", del.Key, err)
+		}
+		s.logger.Debugw("TRIE_DEBUG(BUILD): trie delete", "key", del.Key)
+		if err := mem.Delete(kb); err != nil {
+			return fmt.Errorf("trie delete failed: %w", err)
+		}
+	}
+	return nil
+}
+
 type ChainEventProcessorActor struct {
 	config    types.StrategyConfig
 	appCfg    *config.Config
@@ -166,21 +395,13 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 			// garbage collect around 1% of the time
 			if rand.Intn(100) == 0 {
 				s.logger.Info("garbage collecting accounts")
+				//TODO: implement gc for trie
 				if err := s.db.GarbageCollectTrie(msg.BlockEvent.Block.SlotNumber() - 129600); err != nil {
 					s.logger.Errorf("failed to garbage collect accounts: %v", err)
 				}
 				s.logger.Info("garbage collection complete")
 			}
 		}
-
-		// if err := s.processBlockEvent(msg); err != nil {
-		// 	metrics.RecordProcessingError("ChainEventProcessor", "BlockProcessing")
-		// 	s.logger.Errorf("error processing block event: %v", err)
-		// } else {
-		// 	metrics.MetricEmissionsEventsProcessed.Inc()
-		// 	s.lastSucessfullyIndexedSlot = msg.BlockEvent.Block.SlotNumber()
-		// 	s.lastSucessfullyIndexedBlockHash = msg.BlockEvent.Block.Hash().String()
-		// }
 
 	case types.IndexerTransactionEvent:
 		metrics.RecordActorMessage("ChainEventProcessor", "TransactionEvent")
@@ -196,57 +417,38 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 			return
 		}
 
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					metrics.RecordProcessingError("ChainEventProcessor", "TransactionPanic")
-					s.setProcessingFailed(msg.EventContext.SlotNumber, fmt.Sprintf("panic in processTransactionEvent: %v", r))
-				}
-			}()
-
+		s.withGuard(msg.EventContext.SlotNumber, "TransactionProcessing", func() error {
 			if err := s.processTransactionEvent(msg); err != nil {
-				metrics.RecordProcessingError("ChainEventProcessor", "TransactionProcessing")
-				s.setProcessingFailed(msg.EventContext.SlotNumber, fmt.Sprintf("error in processTransactionEvent: %v", err))
-			} else {
-				// metrics.MetricEmissionsEventsProcessed.Inc()
-
-				blockTransactionCount, exists := s.blockTransactionCountMap[msg.EventContext.BlockNumber]
-				if exists {
-					// decr tx count to track when all txns are processed
-					s.blockTransactionCountMap[msg.EventContext.BlockNumber] = blockTransactionCount - 1
-
-					if blockTransactionCount-1 == 0 {
-						blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
-
-						if err := s.db.AddCursorPoint(common.Point{
-							Hash: blockHash,
-							Slot: msg.EventContext.SlotNumber,
-						}); err != nil {
-							s.logger.Errorf("failed to update cursor: %v", err)
-						}
-					}
-
-				} else {
-					// this should never happen
-					s.logger.Errorf("block transaction count not found for block %d", msg.EventContext.BlockNumber)
-				}
+				return err
 			}
-		}()
 
-		// once all txns are processed, we know merkle trie is caught up
-		// txns can now be built without issue
-
-		if s.blockTransactionCountMap[msg.EventContext.BlockNumber] == 0 {
-			s.logger.Debug("All transactions for block processed, attempting transaction building")
-			if err := s.processBlockEvent(msg); err != nil {
-				metrics.RecordProcessingError("ChainEventProcessor", "BlockProcessing")
-				s.logger.Errorf("error processing block event: %v", err)
+			blockTransactionCount, exists := s.blockTransactionCountMap[msg.EventContext.BlockNumber]
+			if exists {
+				s.blockTransactionCountMap[msg.EventContext.BlockNumber] = blockTransactionCount - 1
+				if blockTransactionCount-1 == 0 {
+					blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
+					if err := s.db.AddCursorPoint(common.Point{
+						Hash: blockHash,
+						Slot: msg.EventContext.SlotNumber,
+					}); err != nil {
+						s.logger.Errorf("failed to update cursor: %v", err)
+					}
+				}
 			} else {
-				// metrics.MetricEventsProcessed.Inc()
+				s.logger.Errorf("block transaction count not found for block %d", msg.EventContext.BlockNumber)
+			}
+
+			// build after all block transactinos are processed to make sure we build with updated trie WRT the utxo being consumed
+			if s.blockTransactionCountMap[msg.EventContext.BlockNumber] == 0 {
+				s.logger.Debug("All transactions for block processed, attempting transaction building")
+				if err := s.processBlockEvent(msg); err != nil {
+					return fmt.Errorf("block processing: %w", err)
+				}
 				s.lastSucessfullyIndexedSlot = msg.EventContext.BlockNumber
 				s.lastSucessfullyIndexedBlockHash = msg.EventTransaction.BlockHash
 			}
-		}
+			return nil
+		})
 
 	case types.IndexerRollbackEvent:
 		metrics.RecordActorMessage("ChainEventProcessor", "RollbackEvent")
@@ -261,19 +463,9 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 			return
 		}
 
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					metrics.RecordProcessingError("ChainEventProcessor", "RollbackPanic")
-					s.setProcessingFailed(msg.SlotNumber, fmt.Sprintf("panic in processRollbackEvent: %v", r))
-				}
-			}()
-
-			if err := s.processRollbackEvent(msg); err != nil {
-				metrics.RecordProcessingError("ChainEventProcessor", "RollbackProcessing")
-				s.setProcessingFailed(msg.SlotNumber, fmt.Sprintf("error in processRollbackEvent: %v", err))
-			}
-		}()
+		s.withGuard(msg.SlotNumber, "RollbackProcessing", func() error {
+			return s.processRollbackEvent(msg)
+		})
 
 	case types.IndexerStatusEvent:
 		metrics.RecordActorMessage("ChainEventProcessor", "StatusEvent")
@@ -378,72 +570,40 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	s.logger.Debug("Processing block tip reached...")
 
 	currentBlockHeight := uint64(blockEvent.EventContext.BlockNumber)
+
+	// Pending tx GC
 	removedTxs := CleanupOldPendingTransactions(
 		currentBlockHeight,
 		s.appCfg.Indexer.TxExpirationBlockNumber,
 	)
-	removedTxnsCount := len(removedTxs)
-	if removedTxnsCount > 0 {
-		s.logger.Infof(
-			"Cleaned up %d old pending transactions",
-			removedTxnsCount,
-		)
+	if n := len(removedTxs); n > 0 {
+		s.logger.Infof("Cleaned up %d old pending transactions", n)
 	}
-
-	pendingCount := GetPendingTransactionCount()
-	if pendingCount > 0 {
-		s.logger.Debugw("Current pending transactions", "count", pendingCount)
+	if c := GetPendingTransactionCount(); c > 0 {
+		s.logger.Debugw("Current pending transactions", "count", c)
 	}
 
 	memTrie, err := s.db.GetInMemoryTrie()
 	if err != nil {
-		return fmt.Errorf("failed to get in-memory trie: %w", err)
+		return fmt.Errorf("get in-memory trie: %w", err)
 	}
-
 	trieLatestRoot := memTrie.Hash()
 
-	singletonPolicyId := s.appCfg.Contract.SingletonPolicyId
-	singletonName := s.appCfg.Contract.SingletonName
-	singletonId := singletonPolicyId + hex.EncodeToString([]byte(singletonName))
-
-	// Try to use cached validator UTXO first
-	var validatorOutRef *apolloUTxO.UTxO
-	cachedValidatorUtxo := GetGlobalValidatorUtxo()
-
-	if cachedValidatorUtxo != nil {
-		s.logger.Debugf("Using cached validator UTXO")
-		validatorOutRef = &apolloUTxO.UTxO{
-			Input:  cachedValidatorUtxo.Input,
-			Output: cachedValidatorUtxo.Output,
-		}
-	} else {
-		s.logger.Debugf("Cached validator UTXO not available, querying...")
-
-		var err error
-
-		validatorOutRef, err = s.provider.GetUtxoByUnit(context.TODO(), singletonId)
-		if err != nil {
-			return fmt.Errorf("failed to fetch contract utxo: %v", err)
-		}
-	}
-
-	validatorDatum := validatorOutRef.Output.GetDatum().ToDatum()
-	decodedValidatorDatumCbor, err := gouroborosCbor.Encode(validatorDatum)
+	// Validator UTxO + datum
+	validatorOutRef, err := s.getOrFetchValidatorUTxO(context.Background())
 	if err != nil {
-		return fmt.Errorf("failed to marshal validator datum to CBOR: %v", err)
+		return err
 	}
-
-	decodedValidatorDatum, err := tx.DecodeMerkleOracleDatum(
-		hex.EncodeToString(decodedValidatorDatumCbor),
+	decodedValidatorDatum, _, err := s.decodeValidatorDatumFromUTxO(
+		validatorOutRef,
 	)
 	if err != nil {
-		return fmt.Errorf("error decoding contract utxo datum: %v", err)
+		return err
 	}
 
-	if pendingCount == 0 &&
+	if GetPendingTransactionCount() == 0 &&
 		!bytes.Equal(decodedValidatorDatum.MerkleRoot, trieLatestRoot) {
 		s.trieRootMismatchCount++
-		// Record trie root mismatch in metrics
 		metrics.MetricTrieRootMismatches.Inc()
 		s.logger.Warnf(
 			"Block %d: validator datum trie root mismatch. Got: %x, Want: %x. Mismatch count: %d",
@@ -453,264 +613,125 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 			s.trieRootMismatchCount,
 		)
 
-		// if s.trieRootMismatchCount >= 3 {
-		// 	s.logger.Errorf(
-		// 		"Block %d: validator datum trie root mismatch for 3 consecutive blocks. Got: %x, Want: %x",
-		// 		currentBlockHeight,
-		// 		decodedValidatorDatum.MerkleRoot,
-		// 		trieLatestRoot,
-		// 	)
-		// 	s.triggerIndexerRestart(
-		// 		"trie_root_mismatch",
-		// 		s.lastSucessfullyIndexedSlot,
-		// 		s.lastSucessfullyIndexedBlockHash,
-		// 	)
-		// 	// no need to return error here, as we will restart the indexer
-		// 	return nil
-		// }
+		if s.trieRootMismatchCount >= 3 {
+			s.logger.Errorf(
+				"Block %d: validator datum trie root mismatch for 3 consecutive blocks. Got: %x, Want: %x",
+				currentBlockHeight,
+				decodedValidatorDatum.MerkleRoot,
+				trieLatestRoot,
+			)
+			s.triggerIndexerRestart(
+				"trie_root_mismatch",
+				s.lastSucessfullyIndexedSlot,
+				s.lastSucessfullyIndexedBlockHash,
+			)
+			// no need to return error here, as we will restart the indexer
+		}
+
+		return nil
+
 	} else {
 		s.trieRootMismatchCount = 0
 	}
 
+	// respect update cadence unless current root is null (bootstrap)
 	blockTimestamp := blockEvent.EventTimestamp
-	s.logger.Infof("Block timestamp: %s", blockTimestamp.Format(time.RFC3339))
-	oracleUpdateInterval := s.appCfg.Oracle.UpdateInterval
-
-	previousUpdateTime := time.UnixMilli(decodedValidatorDatum.CreatedAt)
-	s.logger.Infof(
-		"Previous update time: %s",
-		previousUpdateTime.Format(time.RFC3339),
-	)
-
-	oracleUpdateTime := previousUpdateTime.Add(oracleUpdateInterval)
-	s.logger.Infof(
-		"Oracle update time: %s",
-		oracleUpdateTime.Format(time.RFC3339),
-	)
-
-	currentMerkleRoot := hex.EncodeToString(decodedValidatorDatum.MerkleRoot)
-
-	// if its null then we can ignore the update after constraint
-	if blockTimestamp.Before(oracleUpdateTime) &&
-		currentMerkleRoot != config.NullTrieHash {
+	prevUpdate := time.UnixMilli(decodedValidatorDatum.CreatedAt)
+	nextAllowed := prevUpdate.Add(s.appCfg.Oracle.UpdateInterval)
+	curRootHex := hex.EncodeToString(decodedValidatorDatum.MerkleRoot)
+	if blockTimestamp.Before(nextAllowed) && curRootHex != config.NullTrieHash {
 		s.logger.Infof(
-			"Block timestamp is before oracle update time, skipping update",
+			"Block timestamp is before oracle update time (%s), skipping update",
+			nextAllowed.Format(time.RFC3339),
 		)
 		return nil
 	}
 
 	oracleData, err := s.oracleDataProvider.Fetch(context.Background(), "10")
 	if err != nil {
-		return fmt.Errorf("failed to fetch oracle data: %v", err)
+		return fmt.Errorf("fetch oracle data: %w", err)
 	}
-
 	s.logger.Infof("Fetched %d oracle data items", len(oracleData))
 
-	// Get current cloud data using IPFS CID from validator datum
 	ipfsCidHex := hex.EncodeToString(decodedValidatorDatum.IpfsCid)
 	ipfsCidDecoded := tx.DecodeHexIfValid(ipfsCidHex)
 
 	var currentCloudData []map[string]interface{}
 	// TODO: get previous file reference from DB
-	var previousFileReference string
-
+	previousFileReference := ""
 	if ipfsCidHex != config.NullTrieHash {
 		s.logger.Infof(
 			"Reading current cloud data from IPFS CID: %s",
 			ipfsCidDecoded,
 		)
-		cloudData, err := s.cloud.Read(cloud.Ref(ipfsCidDecoded))
-		if err != nil {
-			s.logger.Warnf("Failed to read current cloud data: %v", err)
-			// Continue with empty current data if we can't read existing
+		if cloudData, readErr := s.cloud.Read(cloud.Ref(ipfsCidDecoded)); readErr != nil {
+			s.logger.Warnf("Failed to read current cloud data: %v", readErr)
 		} else {
-			var currentPayload struct {
+			var payload struct {
 				Data                  []map[string]interface{} `json:"data"`
 				CurrentMerkleRoot     string                   `json:"currentMerkleRoot"`
 				PreviousFileReference string                   `json:"previousFileReference"`
 			}
-
-			if err := json.Unmarshal(cloudData, &currentPayload); err != nil {
+			if err := json.Unmarshal(cloudData, &payload); err != nil {
 				s.logger.Warnf("Failed to decode current cloud data JSON: %v", err)
 			} else {
-				currentCloudData = currentPayload.Data
-				ipfsCidDecoded := tx.DecodeHexIfValid(ipfsCidHex)
+				currentCloudData = payload.Data
 				previousFileReference = ipfsCidDecoded
 				s.logger.Infof("Loaded %d items from current cloud data", len(currentCloudData))
 			}
 		}
 	}
 
-	// Convert oracle data to same format as cloud data
+	// normalize oracle data to []map[string]interface{} and ensure object_id
 	oracleDataMap := make([]map[string]interface{}, len(oracleData))
 	for i, item := range oracleData {
-		// Convert oprovider.Item (map[string]string) to map[string]interface{}
-		convertedItem := make(map[string]interface{}, len(item))
+		m := make(map[string]interface{}, len(item))
 		for k, v := range item {
-			convertedItem[k] = v
+			m[k] = v
 		}
-
-		// Ensure every new object has an object_id property with a UUID
-		// Existing objects are assumed to already have it
-		if _, hasObjectID := convertedItem["object_id"]; !hasObjectID {
-			if drumID, ok := convertedItem["drumId"].(string); ok {
-				// Search for the raw value in the 'key' table
+		if _, ok := m["object_id"]; !ok {
+			if drumID, ok := m["drumId"].(string); ok {
 				var keyResult database.Key
 				err := s.db.DB().
 					Joins("join value on key.current_value_hash = value.value_hash").
 					Where("value.raw = ?", fmt.Sprintf(`"%s"`, drumID)).
-					First(&keyResult).
-					Error
+					First(&keyResult).Error
 				if err == nil {
-					convertedItem["object_id"] = keyResult.ObjectID
+					m["object_id"] = keyResult.ObjectID
 				} else {
-					convertedItem["object_id"] = uuid.New().String()
+					m["object_id"] = uuid.New().String()
 				}
 			} else {
-				convertedItem["object_id"] = uuid.New().String()
+				m["object_id"] = uuid.New().String()
 			}
 			s.logger.Debugf(
 				"Generated new object_id for oracle item %d: %s",
 				i,
-				convertedItem["object_id"],
+				m["object_id"],
 			)
 		}
-
-		oracleDataMap[i] = convertedItem
-		s.logger.Debugf("Oracle item %d: %+v", i, convertedItem)
+		oracleDataMap[i] = m
 	}
 
-	// Track current cloud data keys for deletion detection
-	currentKeys := make(map[string]bool)
-	if len(currentCloudData) > 0 {
-		for _, item := range currentCloudData {
-			objID, ok := item["object_id"].(string)
-			if !ok {
-				s.logger.Warnf(
-					"object_id is not a string or is missing in current cloud data, skipping item: %+v",
-					item,
-				)
-				continue
-			}
+	ins, ups, dels := s.diffTrieOps(memTrie, oracleDataMap, currentCloudData)
+	s.logger.Infow(
+		"Calculated trie operations",
+		"insertions",
+		len(ins),
+		"updates",
+		len(ups),
+		"deletions",
+		len(dels),
+	)
 
-			for key := range item {
-				if key == "object_id" {
-					continue
-				}
-				keyHash := s.db.Hash([]byte(objID + ":" + key))
-				keyHex := hex.EncodeToString(keyHash)
-				currentKeys[keyHex] = true
-			}
-		}
-	}
+	prevMerkleRootHex := hex.EncodeToString(memTrie.Hash())
 
-	// Calculate insertions and updates from oracle data
-	var insertions []struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-	}
-	var updates []struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-	}
-
-	oracleKeys := make(map[string]bool)
-
-	// Process oracle data to determine insertions vs updates
-	for _, item := range oracleDataMap {
-		objID, ok := item["object_id"].(string)
-		if !ok {
-			s.logger.Warnf(
-				"object_id is not a string or is missing, skipping item: %+v",
-				item,
-			)
-			continue
-		}
-
-		for key, value := range item {
-			if key == "object_id" {
-				continue
-			}
-
-			// Compute key hash = blake2b256(object_id + ":" + raw_key)
-			keyHash := s.db.Hash([]byte(objID + ":" + key))
-			keyHex := hex.EncodeToString(keyHash)
-			oracleKeys[keyHex] = true
-
-			// Convert value to JSON bytes then hash it
-			valueBytes, err := json.Marshal(value)
-			if err != nil {
-				s.logger.Errorf(
-					"failed to marshal value for key %s: %v",
-					key,
-					err,
-				)
-				continue
-			}
-			valueHash := s.db.Hash(valueBytes)
-			valueHex := hex.EncodeToString(valueHash)
-
-			// Check if key exists in trie
-			if memTrie.Has(keyHash) {
-				// It's an update
-				updates = append(updates, struct {
-					Key   string `json:"key"`
-					Value string `json:"value"`
-				}{
-					Key:   keyHex,
-					Value: valueHex,
-				})
-			} else {
-				// It's an insertion
-				insertions = append(insertions, struct {
-					Key   string `json:"key"`
-					Value string `json:"value"`
-				}{
-					Key:   keyHex,
-					Value: valueHex,
-				})
-			}
-		}
-	}
-
-	// Calculate deletions (keys in current cloud data but not in oracle data)
-	var deletions []struct {
-		Key string `json:"key"`
-	}
-
-	for keyHex := range currentKeys {
-		if !oracleKeys[keyHex] {
-			// This key was in current data but not in oracle data - it's deleted
-			deletions = append(deletions, struct {
-				Key string `json:"key"`
-			}{
-				Key: keyHex,
-			})
-		}
-	}
-
-	s.logger.Infow("Calculated trie operations",
-		"insertions", len(insertions),
-		"updates", len(updates),
-		"deletions", len(deletions))
-
-	currentMerkleRoot = hex.EncodeToString(memTrie.Hash())
-
-	// Create upload payload in the required format
 	uploadPayload := struct {
 		Data     []map[string]interface{} `json:"data"`
 		TrieData struct {
-			Insertions []struct {
-				Key   string `json:"key"`
-				Value string `json:"value"`
-			} `json:"insertions"`
-			Updates []struct {
-				Key   string `json:"key"`
-				Value string `json:"value"`
-			} `json:"updates"`
-			Deletions []struct {
-				Key string `json:"key"`
-			} `json:"deletions"`
+			Insertions []KVHex  `json:"insertions"`
+			Updates    []KVHex  `json:"updates"`
+			Deletions  []KeyHex `json:"deletions"`
 		} `json:"trieData"`
 		CurrentMerkleRoot     string `json:"currentMerkleRoot"`
 		PreviousMerkleRoot    string `json:"previousMerkleRoot"`
@@ -719,117 +740,27 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		CreatedAt             int64  `json:"createdAt"`
 	}{
 		Data:                  oracleDataMap,
-		CurrentMerkleRoot:     "",
-		PreviousMerkleRoot:    currentMerkleRoot,
+		PreviousMerkleRoot:    prevMerkleRootHex,
 		PreviousFileReference: previousFileReference,
 		TrieLibrary:           "merkle-oracle-node",
 		CreatedAt:             blockEvent.EventTimestamp.Unix(),
 	}
+	uploadPayload.TrieData.Insertions = ins
+	uploadPayload.TrieData.Updates = ups
+	uploadPayload.TrieData.Deletions = dels
 
-	uploadPayload.TrieData.Insertions = insertions
-	uploadPayload.TrieData.Updates = updates
-	uploadPayload.TrieData.Deletions = deletions
-
-	// Apply the trie operations to update the local trie
+	// apply ops to local trie
 	currentSlot := uint64(blockEvent.EventContext.SlotNumber)
-
-	// Process insertions
-	for _, insertion := range insertions {
-		keyBytes, err := hex.DecodeString(insertion.Key)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to decode insertion key %s: %v",
-				insertion.Key,
-				err,
-			)
-		}
-
-		valueBytes, err := hex.DecodeString(insertion.Value)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to decode insertion value %s: %v",
-				insertion.Value,
-				err,
-			)
-		}
-
-		s.logger.Infow(
-			"TRIE_DEBUG(BUILD): trie insert",
-			"key",
-			insertion.Key,
-			"value",
-			insertion.Value,
-		)
-		if err := memTrie.Update(keyBytes, valueBytes, currentSlot); err != nil {
-			return fmt.Errorf("failed to insert trie entry: %v", err)
-		}
+	if err := s.applyTrieOperations(memTrie, ins, ups, dels, currentSlot); err != nil {
+		return err
 	}
-
-	// Process updates
-	for _, update := range updates {
-		keyBytes, err := hex.DecodeString(update.Key)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to decode update key %s: %v",
-				update.Key,
-				err,
-			)
-		}
-
-		valueBytes, err := hex.DecodeString(update.Value)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to decode update value %s: %v",
-				update.Value,
-				err,
-			)
-		}
-
-		s.logger.Infow(
-			"TRIE_DEBUG(BUILD): trie update",
-			"key",
-			update.Key,
-			"value",
-			update.Value,
-		)
-		if err := memTrie.Update(keyBytes, valueBytes, currentSlot); err != nil {
-			return fmt.Errorf("failed to update trie entry: %v", err)
-		}
-	}
-
-	// Process deletions
-	for _, deletion := range deletions {
-		keyBytes, err := hex.DecodeString(deletion.Key)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to decode deletion key %s: %v",
-				deletion.Key,
-				err,
-			)
-		}
-
-		s.logger.Infow("TRIE_DEBUG(BUILD): trie delete", "key", deletion.Key)
-		if err := memTrie.Delete(keyBytes); err != nil {
-			return fmt.Errorf("failed to delete trie entry: %v", err)
-		}
-	}
-
-	s.logger.Infow("Applied trie operations successfully",
-		"insertions", len(insertions),
-		"updates", len(updates),
-		"deletions", len(deletions),
-		"slot", currentSlot)
-
-	// Get the updated trie root after applying operations
 	updatedTrieRoot := memTrie.Hash()
+	uploadPayload.CurrentMerkleRoot = hex.EncodeToString(updatedTrieRoot)
 	s.logger.Infof("Updated Trie Root Hash: %x", updatedTrieRoot)
 
-	uploadPayload.CurrentMerkleRoot = hex.EncodeToString(updatedTrieRoot)
-
-	// Marshal to JSON and upload to cloud
 	payloadBytes, err := json.Marshal(uploadPayload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal upload payload: %v", err)
+		return fmt.Errorf("marshal upload payload: %w", err)
 	}
 
 	s.logger.Infof(
@@ -838,87 +769,88 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	)
 	cloudRef, err := s.cloud.Upload(payloadBytes)
 	if err != nil {
-		return fmt.Errorf("failed to upload data to cloud: %v", err)
+		return fmt.Errorf("upload to cloud: %w", err)
 	}
-
 	s.logger.Infof(
 		"Successfully uploaded data to cloud with reference: %s",
 		string(cloudRef),
 	)
 
-	// Convert cloud reference to bytes for transaction building
 	cloudRefBytes := []byte(string(cloudRef))
 
 	txObj, err := tx.BuildRecreateTx(
-		s.appCfg,
-		s.provider,
-		validatorOutRef,
-		updatedTrieRoot,
-		cloudRefBytes,
+		s.appCfg, s.provider, validatorOutRef, updatedTrieRoot, cloudRefBytes,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to build tx: %v", err)
+		return fmt.Errorf("build tx: %w", err)
 	}
 
-	txInputs := make([]tx.InputKey, len(txObj.TransactionBody.Inputs))
-	inputMap := make(map[tx.InputKey]struct{})
+	inputs := make([]tx.InputKey, 0, len(txObj.TransactionBody.Inputs))
+	inputMap := make(
+		map[tx.InputKey]struct{},
+		len(txObj.TransactionBody.Inputs),
+	)
+	for _, in := range txObj.TransactionBody.Inputs {
+		ik := tx.InputKey{
+			TxId:  hex.EncodeToString(in.TransactionId),
+			Index: in.Index,
+		}
+		inputs = append(inputs, ik)
+		inputMap[ik] = struct{}{}
+	}
 
-	for idx, input := range txObj.TransactionBody.Inputs {
-		txInputs[idx] = tx.InputKey{
-			TxId:  hex.EncodeToString(input.TransactionId),
-			Index: input.Index,
+	submit := func() (string, error) {
+		txBytes, _ := txObj.Bytes()
+
+		if hasConflict, conflicting := CheckInputConflicts(inputs...); hasConflict {
+			return "", fmt.Errorf(
+				"tx inputs conflict with pending tx: %s",
+				conflicting,
+			)
 		}
 
-		inputMap[txInputs[idx]] = struct{}{}
+		return provider.SubmitTx(s.appCfg, s.provider, txBytes)
 	}
 
-	hasConflict, conflictingTxHash := CheckInputConflicts(txInputs...)
-	if hasConflict {
+	txHash, err := submit()
+	if err != nil &&
+		strings.Contains(err.Error(), "OutsideValidityIntervalUTxO") {
 		s.logger.Warnw(
-			"Transaction inputs conflict with pending transaction, skipping",
-			"conflicting_tx",
-			conflictingTxHash,
-			"potential_inputs",
-			len(txInputs),
+			"Validity interval expired; rebuilding and resubmitting",
+			"err",
+			err.Error(),
 		)
-		return nil
-	}
 
-	txBytes, _ := txObj.Bytes()
-
-	s.logger.Infof("txBytes: %x", txBytes)
-
-	txHash, err := provider.SubmitTx(s.appCfg, s.provider, txBytes)
-	if err != nil {
-		if strings.Contains(err.Error(), "OutsideValidityIntervalUTxO") {
-			s.logger.Warnw(
-				"Transaction validity interval expired, rebuilding and resubmitting",
-				"original_error",
-				err.Error(),
-			)
-
-			newTxObj, rebuildErr := tx.BuildRecreateTx(
-				s.appCfg,
-				s.provider,
-				validatorOutRef,
-				updatedTrieRoot,
-				cloudRefBytes,
-			)
-			if rebuildErr != nil {
-				return fmt.Errorf(
-					"failed to rebuild tx after validity interval expiration: %v",
-					rebuildErr,
-				)
-			}
-
-			newTxBytes, _ := newTxObj.Bytes()
-			txHash, err = provider.SubmitTx(s.appCfg, s.provider, newTxBytes)
-			if err != nil {
-				return fmt.Errorf("failed to submit rebuilt tx: %v", err)
-			}
-		} else {
-			return fmt.Errorf("failed to submit tx: %v", err)
+		// Rebuild and replace txObj
+		txObj, err = tx.BuildRecreateTx(
+			s.appCfg,
+			s.provider,
+			validatorOutRef,
+			updatedTrieRoot,
+			cloudRefBytes,
+		)
+		if err != nil {
+			return fmt.Errorf("rebuild tx: %w", err)
 		}
+
+		inputs = make([]tx.InputKey, 0, len(txObj.TransactionBody.Inputs))
+		inputMap = make(
+			map[tx.InputKey]struct{},
+			len(txObj.TransactionBody.Inputs),
+		)
+		for _, in := range txObj.TransactionBody.Inputs {
+			ik := tx.InputKey{
+				TxId:  hex.EncodeToString(in.TransactionId),
+				Index: in.Index,
+			}
+			inputs = append(inputs, ik)
+			inputMap[ik] = struct{}{}
+		}
+
+		txHash, err = submit()
+	}
+	if err != nil {
+		return fmt.Errorf("submit tx: %w", err)
 	}
 
 	s.logger.Infof(
@@ -926,18 +858,6 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		currentBlockHeight,
 		txHash,
 	)
-
-	// if s.discordClient == nil {
-	// 	discordClient, err := webhook.NewWithURL(
-	// 		s.appCfg.Logging.NotificationDiscordWebhookURL,
-	// 	)
-	// 	if err != nil {
-	// 		s.logger.Errorf("Failed to initialize Discord client: %v", err)
-	// 	} else {
-	// 		s.discordClient = discordClient
-	// 	}
-	// }
-
 	AddPendingTransaction(txHash, inputMap, currentBlockHeight)
 
 	return nil
@@ -969,9 +889,10 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 	redeemers := txEvent.EventTransaction.Witnesses.Redeemers()
 
 	validTransaction := false
-	var decodedValidatorDatumCbor []byte
+	var decodedDatum *tx.MerkleOracleDatum
+	var err error
 
-	// Locate the singleton output, cache UTXO, and capture datum CBOR
+	// find singleton output, cache UTXO, and capture datum CBOR
 	for idx, output := range txEvent.EventTransaction.Outputs {
 		assets := output.Assets()
 		if assets == nil {
@@ -1019,16 +940,11 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 					txEvent.EventTransaction.Transaction.Hash().String(),
 				)
 
-				validatorDatum := apolloUtxo.Output.GetDatum().ToDatum()
-				var err error
-				decodedValidatorDatumCbor, err = gouroborosCbor.Encode(
-					validatorDatum,
+				decodedDatum, _, err = s.decodeValidatorDatumFromUTxO(
+					apolloUtxo,
 				)
 				if err != nil {
-					return fmt.Errorf(
-						"failed to marshal validator datum to CBOR: %v",
-						err,
-					)
+					return err
 				}
 				break
 			}
@@ -1041,7 +957,7 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 		}
 	}
 
-	// Must have a spend redeemer with RecreateAction
+	// must have a spend redeemer with RecreateAction
 	if validTransaction && redeemers != nil {
 		spendIndexes := redeemers.Indexes(0) // SPEND tag = 0
 		if len(spendIndexes) == 0 {
@@ -1068,12 +984,7 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			return nil
 		}
 
-		decodedValidatorDatum, err := tx.DecodeMerkleOracleDatum(
-			hex.EncodeToString(decodedValidatorDatumCbor),
-		)
-		if err != nil {
-			return fmt.Errorf("error decoding contract utxo datum: %v", err)
-		}
+		decodedValidatorDatum := decodedDatum
 		trieRootHex := hex.EncodeToString(decodedValidatorDatum.MerkleRoot)
 		if trieRootHex == config.NullTrieHash {
 			s.logger.Infof("Trie root is null, skipping trie update")
@@ -1122,14 +1033,7 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			return fmt.Errorf("failed to decode cloud data JSON: %v", err)
 		}
 
-		decodeHexBytes := func(s string) ([]byte, error) {
-			if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
-				s = s[2:]
-			}
-			return hex.DecodeString(s)
-		}
-
-		// Build a map of key_hash -> (object_id, raw_key, raw_value) from the full snapshot `data`
+		// build map of key_hash -> (object_id, raw_key, raw_value) from the full snapshot `data`
 		type rawTriple struct {
 			objID string
 			key   string
@@ -1267,7 +1171,6 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			}
 		}
 
-		// Compose ApplyBatchParams and ingest (handles genesis + updates + reorgs)
 		var prevCIDPtr *string
 		if payload.PreviousFileReference != "" &&
 			payload.PreviousFileReference != config.NullTrieHash {
@@ -1312,7 +1215,7 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		"strategy_id", s.config.ID)
 
 	originalRoot := s.db.GetTrieHash()
-	// Log rollback initiation
+
 	s.logger.Infof("Initiating rollback to slot %d (block %s)",
 		rollbackEvent.SlotNumber, rollbackEvent.BlockHash)
 
@@ -1345,13 +1248,6 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		s.logger.Debugf("Trie state unchanged after rollback (root: %x)", originalRoot)
 	}
 
-	// if err := s.db.PurgeHistory(rollbackEvent.SlotNumber - rollbackSlots); err != nil {
-	// 	s.logger.Warnf("Failed to purge stale trie and account state: %s", err)
-	// } else {
-	// 	s.logger.Debugf("Successfully purged trie history before slot %d",
-	// 		rollbackEvent.SlotNumber-rollbackSlots)
-	// }
-
 	var deletedBlocks []string
 	for blockKey := range s.processedBlockMap {
 		// extract block number from composite key (format: "blockNumber:blockHash")
@@ -1375,7 +1271,6 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 	return nil
 }
 
-//nolint:unused
 func (s *ChainEventProcessorActor) triggerIndexerRestart(
 	reason string,
 	restartSlot uint64,
