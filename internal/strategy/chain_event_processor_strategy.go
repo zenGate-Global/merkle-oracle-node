@@ -648,7 +648,6 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	ipfsCidDecoded := tx.DecodeHexIfValid(ipfsCidHex)
 
 	var currentCloudData []map[string]interface{}
-	// TODO: get previous file reference from DB
 	previousFileReference := ""
 	if ipfsCidHex != config.NullTrieHash {
 		s.logger.Infof(
