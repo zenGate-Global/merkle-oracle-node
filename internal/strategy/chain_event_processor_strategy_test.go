@@ -2,96 +2,68 @@ package strategy
 
 import (
 	"encoding/hex"
-	"encoding/json"
-	"sync"
+	"strings"
 	"testing"
 
+	"zenGate-Global/merkle-oracle-node/internal/database"
 	"zenGate-Global/merkle-oracle-node/internal/logging"
 
-	mpf "github.com/blinklabs-io/merkle-patricia-forestry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/blake2b"
 )
 
-func hashBlake2b(value []byte) []byte {
-	tmpHash, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err.Error())
-	}
-	tmpHash.Write(value)
-	return tmpHash.Sum(nil)
-}
-
-type testTrie struct {
-	trie  *mpf.Trie
-	mutex sync.RWMutex
-}
-
-func newTestTrie() *testTrie {
-	return &testTrie{
-		trie: mpf.NewTrie(),
+func newTestActor(t *testing.T) *ChainEventProcessorActor {
+	t.Helper()
+	return &ChainEventProcessorActor{
+		logger: logging.GetLogger(),
+		db:     &database.Database{},
 	}
 }
 
-func (t *testTrie) Hash() []byte {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
+func buildMockCurrentState(
+	t *testing.T,
+	actor *ChainEventProcessorActor,
+	existingData map[string]interface{},
+) map[string]string {
+	t.Helper()
+	currentState := make(map[string]string)
+	for keyStr, value := range existingData {
+		parts := strings.Split(keyStr, ":")
+		require.Len(t, parts, 2, "Invalid key format: %s", keyStr)
+		objID, key := parts[0], parts[1]
 
-	hash := t.trie.Hash().Bytes()
-	return append([]byte(nil), hash...)
-}
-
-func (t *testTrie) Has(key []byte) bool {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
-	return t.trie.Has(key)
-}
-
-func (t *testTrie) Update(key []byte, value []byte, slot uint64) error {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	t.trie.Set(key, value)
-	return nil
-}
-
-func (t *testTrie) Delete(key []byte) error {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	_ = t.trie.Delete(key)
-	return nil
-}
-
-// wraps ChainEventProcessorActor for testing
-type testActor struct {
-	*ChainEventProcessorActor
-}
-
-func (ta *testActor) keyHashHex(objID, key string) string {
-	return hex.EncodeToString(hashBlake2b([]byte(objID + ":" + key)))
-}
-
-func (ta *testActor) valueHashHex(v interface{}) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", err
+		keyHex := actor.keyHashHex(objID, key)
+		valueHex, err := actor.valueHashHex(value)
+		require.NoError(t, err)
+		currentState[keyHex] = valueHex
 	}
-	return hex.EncodeToString(hashBlake2b(b)), nil
+	return currentState
 }
 
-func createTestActor(t *testing.T) *testActor {
-	logger := logging.GetLogger()
-	return &testActor{
-		ChainEventProcessorActor: &ChainEventProcessorActor{
-			logger: logger,
-		},
+func getDefaultMockState(
+	t *testing.T,
+	actor *ChainEventProcessorActor,
+) map[string]string {
+	existingData := map[string]interface{}{
+		"user1:name": "Old Alice",
+		"user1:age":  24,
+		"user2:name": "Bob",
+		"user2:age":  30,
 	}
+	return buildMockCurrentState(t, actor, existingData)
 }
 
-// creates test data for oracle and cloud data
+func mustValueHash(
+	t *testing.T,
+	actor *ChainEventProcessorActor,
+	v interface{},
+) string {
+	t.Helper()
+	hash, err := actor.valueHashHex(v)
+	require.NoError(t, err)
+	return hash
+}
+
 func createTestData() ([]map[string]interface{}, []map[string]interface{}) {
 	oracleData := []map[string]interface{}{
 		{
@@ -130,62 +102,30 @@ func createTestData() ([]map[string]interface{}, []map[string]interface{}) {
 			"status":    "inactive",
 		},
 	}
-
 	return oracleData, currentCloudData
 }
 
-// prefillTrie adds some existing data to the trie to test insert vs update logic
-func prefillTrie(t *testing.T, actor *testActor, memTrie trieLike) {
-	// Add some existing keys to test update scenario
-	existingData := map[string]string{
-		"user1:name": "Old Alice",
-		"user1:age":  "24",
-		"user2:name": "Bob",
-		"user2:age":  "30",
-	}
-
-	for keyStr, valueStr := range existingData {
-		keyHash := hashBlake2b([]byte(keyStr))
-		valueHash := hashBlake2b(
-			[]byte(`"` + valueStr + `"`),
-		) // JSON encode the value
-		err := memTrie.Update(keyHash, valueHash, 0)
-		require.NoError(t, err)
-	}
-}
-
 func TestDiffTrieOps_InsertionsOnly(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
-	// Create empty trie
-	memTrie := newTestTrie()
-
+	currentState := make(map[string]string)
 	oracleData := []map[string]interface{}{
-		{
-			"object_id": "user1",
-			"name":      "Alice",
-			"age":       25,
-		},
+		{"object_id": "user1", "name": "Alice", "age": 25},
 	}
 
-	currentCloudData := []map[string]interface{}{} // empty cloud data
-
-	insertions, updates, deletions := actor.diffTrieOps(
-		memTrie,
+	insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+		currentState,
 		oracleData,
-		currentCloudData,
 	)
 
-	// Should have 2 insertions (name and age), no updates or deletions
 	assert.Len(t, insertions, 2)
 	assert.Len(t, updates, 0)
 	assert.Len(t, deletions, 0)
 
-	// Verify the keys are correct
-	expectedKeys := make(map[string]bool)
-	expectedKeys[actor.keyHashHex("user1", "name")] = true
-	expectedKeys[actor.keyHashHex("user1", "age")] = true
-
+	expectedKeys := map[string]bool{
+		actor.keyHashHex("user1", "name"): true,
+		actor.keyHashHex("user1", "age"):  true,
+	}
 	for _, insertion := range insertions {
 		assert.True(
 			t,
@@ -199,38 +139,28 @@ func TestDiffTrieOps_InsertionsOnly(t *testing.T) {
 }
 
 func TestDiffTrieOps_UpdatesOnly(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
-	// Create trie with existing data
-	memTrie := newTestTrie()
-	prefillTrie(t, actor, memTrie)
+	currentState := getDefaultMockState(t, actor)
 
 	oracleData := []map[string]interface{}{
-		{
-			"object_id": "user1",
-			"name":      "Alice Updated",
-			"age":       26, // updated age
-		},
+		{"object_id": "user1", "name": "Alice Updated", "age": 26},
+		{"object_id": "user2", "name": "Bob", "age": 30},
 	}
 
-	currentCloudData := []map[string]interface{}{} // empty cloud data
-
-	insertions, updates, deletions := actor.diffTrieOps(
-		memTrie,
+	insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+		currentState,
 		oracleData,
-		currentCloudData,
 	)
 
-	// Should have 2 updates (name and age), no insertions or deletions
 	assert.Len(t, insertions, 0)
 	assert.Len(t, updates, 2)
 	assert.Len(t, deletions, 0)
 
-	// Verify the keys are correct
-	expectedKeys := make(map[string]bool)
-	expectedKeys[actor.keyHashHex("user1", "name")] = true
-	expectedKeys[actor.keyHashHex("user1", "age")] = true
-
+	expectedKeys := map[string]bool{
+		actor.keyHashHex("user1", "name"): true,
+		actor.keyHashHex("user1", "age"):  true,
+	}
 	for _, update := range updates {
 		assert.True(
 			t,
@@ -244,37 +174,29 @@ func TestDiffTrieOps_UpdatesOnly(t *testing.T) {
 }
 
 func TestDiffTrieOps_DeletionsOnly(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
-	// Create empty trie
-	memTrie := newTestTrie()
+	existingData := map[string]interface{}{
+		"user1:name": "Alice",
+		"user1:age":  25,
+	}
+	currentState := buildMockCurrentState(t, actor, existingData)
 
 	oracleData := []map[string]interface{}{} // empty oracle data
 
-	currentCloudData := []map[string]interface{}{
-		{
-			"object_id": "user1",
-			"name":      "Alice",
-			"age":       25,
-		},
-	}
-
-	insertions, updates, deletions := actor.diffTrieOps(
-		memTrie,
+	insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+		currentState,
 		oracleData,
-		currentCloudData,
 	)
 
-	// Should have 2 deletions (name and age), no insertions or updates
 	assert.Len(t, insertions, 0)
 	assert.Len(t, updates, 0)
 	assert.Len(t, deletions, 2)
 
-	// Verify the keys are correct
-	expectedKeys := make(map[string]bool)
-	expectedKeys[actor.keyHashHex("user1", "name")] = true
-	expectedKeys[actor.keyHashHex("user1", "age")] = true
-
+	expectedKeys := map[string]bool{
+		actor.keyHashHex("user1", "name"): true,
+		actor.keyHashHex("user1", "age"):  true,
+	}
 	for _, deletion := range deletions {
 		assert.True(
 			t,
@@ -288,38 +210,34 @@ func TestDiffTrieOps_DeletionsOnly(t *testing.T) {
 }
 
 func TestDiffTrieOps_MixedOperations(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
-	// Create trie with some existing data
-	memTrie := newTestTrie()
-	prefillTrie(t, actor, memTrie)
+	existingData := map[string]interface{}{
+		"user1:name":   "Alice Old",
+		"user1:age":    24,
+		"user1:city":   "Old City",
+		"user2:name":   "Bob",
+		"user2:age":    30,
+		"user4:name":   "David",
+		"user4:status": "inactive",
+	}
+	currentState := buildMockCurrentState(t, actor, existingData)
 
-	oracleData, currentCloudData := createTestData()
+	oracleData, _ := createTestData()
 
-	insertions, updates, deletions := actor.diffTrieOps(
-		memTrie,
+	insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+		currentState,
 		oracleData,
-		currentCloudData,
 	)
 
-	// Verify we have the expected operations
 	assert.Greater(t, len(insertions), 0, "Should have some insertions")
 	assert.Greater(t, len(updates), 0, "Should have some updates")
 	assert.Greater(t, len(deletions), 0, "Should have some deletions")
 
-	// Verify specific expectations:
-	// user1:name and user1:age should be updates (exist in prefilled trie)
-	// user1:email should be insertion (new key)
-	// user2:name and user2:age should be updates (exist in prefilled trie)
-	// user3:name and user3:balance should be insertions (new user)
-	// user1:city and user4:* should be deletions (in cloud but not oracle)
-
-	// Check some specific keys
 	user1NameKey := actor.keyHashHex("user1", "name")
 	user1EmailKey := actor.keyHashHex("user1", "email")
 	user3NameKey := actor.keyHashHex("user3", "name")
 
-	// user1:name should be in updates
 	found := false
 	for _, update := range updates {
 		if update.Key == user1NameKey {
@@ -329,7 +247,6 @@ func TestDiffTrieOps_MixedOperations(t *testing.T) {
 	}
 	assert.True(t, found, "user1:name should be in updates")
 
-	// user1:email should be in insertions
 	found = false
 	for _, insertion := range insertions {
 		if insertion.Key == user1EmailKey {
@@ -339,7 +256,6 @@ func TestDiffTrieOps_MixedOperations(t *testing.T) {
 	}
 	assert.True(t, found, "user1:email should be in insertions")
 
-	// user3:name should be in insertions
 	found = false
 	for _, insertion := range insertions {
 		if insertion.Key == user3NameKey {
@@ -351,14 +267,12 @@ func TestDiffTrieOps_MixedOperations(t *testing.T) {
 }
 
 func TestDiffTrieOps_EdgeCases(t *testing.T) {
-	actor := createTestActor(t)
-
-	memTrie := newTestTrie()
+	actor := newTestActor(t)
+	currentState := make(map[string]string)
 
 	t.Run("Empty data", func(t *testing.T) {
-		insertions, updates, deletions := actor.diffTrieOps(
-			memTrie,
-			[]map[string]interface{}{},
+		insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+			currentState,
 			[]map[string]interface{}{},
 		)
 		assert.Empty(t, insertions)
@@ -368,20 +282,12 @@ func TestDiffTrieOps_EdgeCases(t *testing.T) {
 
 	t.Run("Missing object_id", func(t *testing.T) {
 		oracleData := []map[string]interface{}{
-			{
-				"name": "Alice", // no object_id
-				"age":  25,
-			},
-			{
-				"object_id": "", // empty object_id
-				"name":      "Bob",
-			},
+			{"name": "Alice", "age": 25},     // no object_id
+			{"object_id": "", "name": "Bob"}, // empty object_id
 		}
-
-		insertions, updates, deletions := actor.diffTrieOps(
-			memTrie,
+		insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+			currentState,
 			oracleData,
-			[]map[string]interface{}{},
 		)
 		assert.Empty(
 			t,
@@ -395,15 +301,13 @@ func TestDiffTrieOps_EdgeCases(t *testing.T) {
 	t.Run("Non-string object_id", func(t *testing.T) {
 		oracleData := []map[string]interface{}{
 			{
-				"object_id": 123, // numeric object_id should be ignored
+				"object_id": 123,
 				"name":      "Alice",
-			},
+			}, // numeric object_id should be ignored
 		}
-
-		insertions, updates, deletions := actor.diffTrieOps(
-			memTrie,
+		insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+			currentState,
 			oracleData,
-			[]map[string]interface{}{},
 		)
 		assert.Empty(
 			t,
@@ -416,9 +320,8 @@ func TestDiffTrieOps_EdgeCases(t *testing.T) {
 }
 
 func TestDiffTrieOps_ValueHashing(t *testing.T) {
-	actor := createTestActor(t)
-
-	memTrie := newTestTrie()
+	actor := newTestActor(t)
+	currentState := make(map[string]string)
 
 	oracleData := []map[string]interface{}{
 		{
@@ -432,33 +335,29 @@ func TestDiffTrieOps_ValueHashing(t *testing.T) {
 		},
 	}
 
-	insertions, updates, deletions := actor.diffTrieOps(
-		memTrie,
+	insertions, updates, deletions := actor.diffTrieOpsFromHexState(
+		currentState,
 		oracleData,
-		[]map[string]interface{}{},
 	)
 
 	assert.Len(t, insertions, 6) // name, age, balance, active, tags, metadata
 	assert.Empty(t, updates)
 	assert.Empty(t, deletions)
 
-	// Verify that values are properly JSON-encoded and hashed
 	for _, insertion := range insertions {
 		assert.NotEmpty(t, insertion.Key, "Key should not be empty")
 		assert.NotEmpty(t, insertion.Value, "Value should not be empty")
 
-		// Verify key is valid hex
 		_, err := hex.DecodeString(insertion.Key)
 		assert.NoError(t, err, "Key should be valid hex")
 
-		// Verify value is valid hex
 		_, err = hex.DecodeString(insertion.Value)
 		assert.NoError(t, err, "Value should be valid hex")
 	}
 }
 
 func TestValueHashHex(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
 	testCases := []struct {
 		name  string
@@ -479,11 +378,9 @@ func TestValueHashHex(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotEmpty(t, hash)
 
-			// Verify it's valid hex
 			_, err = hex.DecodeString(hash)
 			assert.NoError(t, err)
 
-			// Verify consistency
 			hash2, err := actor.valueHashHex(tc.value)
 			assert.NoError(t, err)
 			assert.Equal(t, hash, hash2, "Same value should produce same hash")
@@ -492,7 +389,7 @@ func TestValueHashHex(t *testing.T) {
 }
 
 func TestKeyHashHex(t *testing.T) {
-	actor := createTestActor(t)
+	actor := newTestActor(t)
 
 	testCases := []struct {
 		objID string
@@ -510,11 +407,9 @@ func TestKeyHashHex(t *testing.T) {
 			hash := actor.keyHashHex(tc.objID, tc.key)
 			assert.NotEmpty(t, hash)
 
-			// Verify it's valid hex
 			_, err := hex.DecodeString(hash)
 			assert.NoError(t, err)
 
-			// Verify consistency
 			hash2 := actor.keyHashHex(tc.objID, tc.key)
 			assert.Equal(
 				t,
@@ -523,7 +418,6 @@ func TestKeyHashHex(t *testing.T) {
 				"Same objID/key should produce same hash",
 			)
 
-			// Verify different inputs produce different hashes
 			if tc.objID != "" && tc.key != "" {
 				differentHash := actor.keyHashHex(tc.objID+"_diff", tc.key)
 				assert.NotEqual(
@@ -535,4 +429,116 @@ func TestKeyHashHex(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateTrieOperations_ValidCase(t *testing.T) {
+	actor := newTestActor(t)
+
+	currentData := []map[string]interface{}{
+		{
+			"object_id": "user1",
+			"name":      "Alice Updated",
+			"age":       26,
+			"email":     "alice@example.com",
+		},
+		{"object_id": "user2", "name": "Bob"},
+	}
+
+	previousDataRaw := map[string]interface{}{
+		"user1:name":   "Alice",
+		"user1:age":    25,
+		"user2:name":   "Bob",
+		"user3:status": "inactive",
+	}
+	previousState := buildMockCurrentState(t, actor, previousDataRaw)
+
+	actualInsertions := []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}{
+		{
+			Key:   actor.keyHashHex("user1", "email"),
+			Value: mustValueHash(t, actor, "alice@example.com"),
+		},
+	}
+	actualUpdates := []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}{
+		{
+			Key:   actor.keyHashHex("user1", "name"),
+			Value: mustValueHash(t, actor, "Alice Updated"),
+		},
+		{
+			Key:   actor.keyHashHex("user1", "age"),
+			Value: mustValueHash(t, actor, 26),
+		},
+	}
+	actualDeletions := []struct {
+		Key string `json:"key"`
+	}{
+		{Key: actor.keyHashHex("user3", "status")},
+	}
+
+	report, err := actor.validateTrieOperations(
+		currentData,
+		previousState,
+		actualInsertions,
+		actualUpdates,
+		actualDeletions,
+	)
+
+	assert.NoError(t, err)
+	assert.True(t, report.Valid)
+	assert.Empty(t, report.MissingInsertions)
+	assert.Empty(t, report.UnexpectedInsertions)
+	assert.Empty(t, report.MissingUpdates)
+	assert.Empty(t, report.UnexpectedUpdates)
+	assert.Empty(t, report.MissingDeletions)
+	assert.Empty(t, report.UnexpectedDeletions)
+	assert.Empty(t, report.Errors)
+}
+
+func TestValidateTrieOperations_InvalidCase(t *testing.T) {
+	actor := newTestActor(t)
+
+	currentData := []map[string]interface{}{
+		{"object_id": "user1", "name": "Alice", "age": 25},
+	}
+	previousState := make(map[string]string)
+
+	// wrong: provide updates instead of insertions
+	actualInsertions := []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}{}
+	actualUpdates := []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}{
+		{
+			Key:   actor.keyHashHex("user1", "name"),
+			Value: mustValueHash(t, actor, "Alice"),
+		},
+		{
+			Key:   actor.keyHashHex("user1", "age"),
+			Value: mustValueHash(t, actor, 25),
+		},
+	}
+	actualDeletions := []struct {
+		Key string `json:"key"`
+	}{}
+
+	report, err := actor.validateTrieOperations(
+		currentData,
+		previousState,
+		actualInsertions,
+		actualUpdates,
+		actualDeletions,
+	)
+
+	assert.NoError(t, err)
+	assert.False(t, report.Valid)
+	assert.Len(t, report.MissingInsertions, 2)
+	assert.Len(t, report.UnexpectedUpdates, 2)
 }
