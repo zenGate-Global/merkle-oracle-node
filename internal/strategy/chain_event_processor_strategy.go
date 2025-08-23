@@ -25,7 +25,6 @@ import (
 	"github.com/schollz/progressbar/v3"
 	connector "github.com/zenGate-Global/cardano-connector-go"
 	"go.uber.org/zap"
-	"golang.org/x/crypto/blake2b"
 
 	gouroborosCbor "github.com/blinklabs-io/gouroboros/cbor"
 
@@ -48,6 +47,13 @@ type KVHex struct {
 
 type KeyHex struct {
 	Key string `json:"key"`
+}
+
+func bytes32(b []byte) (out [32]byte) { copy(out[:], b); return }
+
+type kvBytes struct {
+	k [32]byte
+	v [32]byte
 }
 
 func trim0x(s string) string {
@@ -73,6 +79,173 @@ func (s *ChainEventProcessorActor) valueHashHex(v interface{}) (string, error) {
 	return hex.EncodeToString(s.db.Hash(b)), nil
 }
 
+type ValidationReport struct {
+	Valid                bool
+	MissingInsertions    []string
+	UnexpectedInsertions []string
+	MissingUpdates       []string
+	UnexpectedUpdates    []string
+	MissingDeletions     []string
+	UnexpectedDeletions  []string
+	Errors               []string
+}
+
+// get state from db
+func (s *ChainEventProcessorActor) getStateFromDB(
+	ref string,
+) (map[string]string, error) {
+	state := make(map[string]string)
+
+	if ref == "" || ref == config.NullTrieHash {
+		return state, nil // empty/genesis state
+	}
+
+	prevOracleFile, err := s.db.GetOracleFileByCID(context.Background(), ref)
+	if err != nil {
+		return nil, err
+	}
+
+	prevTrie, err := s.db.GetTrieByOracleFileID(
+		context.Background(),
+		prevOracleFile.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	stateMapBytes, err := s.db.GetStateMapAtSlot(
+		context.Background(),
+		uint64(prevTrie.Slot),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to get state map at slot %d: %w",
+			prevTrie.Slot,
+			err,
+		)
+	}
+
+	// build state map
+	for k, v := range stateMapBytes {
+		keyHex := hex.EncodeToString(k[:])
+		valueHex := hex.EncodeToString(v[:])
+		state[keyHex] = valueHex
+	}
+
+	return state, nil
+}
+
+// validateTrieOperations compares expected trie operations (derived from data diff)
+// with actual trie operations from the payload
+func (s *ChainEventProcessorActor) validateTrieOperations(
+	oracleData []map[string]interface{},
+	previousState map[string]string,
+	actualInsertions []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	},
+	actualUpdates []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	},
+	actualDeletions []struct {
+		Key string `json:"key"`
+	},
+) (*ValidationReport, error) {
+	report := &ValidationReport{Valid: true}
+
+	expectedInsertions, expectedUpdates, expectedDeletions := s.diffTrieOpsFromHexState(
+		previousState,
+		oracleData,
+	)
+
+	expectedInsertMap := make(map[string]string)
+	for _, ins := range expectedInsertions {
+		expectedInsertMap[ins.Key] = ins.Value
+	}
+
+	expectedUpdateMap := make(map[string]string)
+	for _, upd := range expectedUpdates {
+		expectedUpdateMap[upd.Key] = upd.Value
+	}
+
+	expectedDeleteSet := make(map[string]struct{})
+	for _, del := range expectedDeletions {
+		expectedDeleteSet[del.Key] = struct{}{}
+	}
+
+	actualInsertMap := make(map[string]string)
+	for _, ins := range actualInsertions {
+		actualInsertMap[ins.Key] = ins.Value
+	}
+
+	actualUpdateMap := make(map[string]string)
+	for _, upd := range actualUpdates {
+		actualUpdateMap[upd.Key] = upd.Value
+	}
+
+	actualDeleteSet := make(map[string]struct{})
+	for _, del := range actualDeletions {
+		actualDeleteSet[del.Key] = struct{}{}
+	}
+
+	// Compare insertions
+	for key, value := range expectedInsertMap {
+		if actualValue, exists := actualInsertMap[key]; !exists {
+			report.MissingInsertions = append(report.MissingInsertions, key)
+			report.Valid = false
+		} else if actualValue != value {
+			report.Errors = append(report.Errors, fmt.Sprintf("Insertion value mismatch for key %s: expected %s, got %s", key, value, actualValue))
+			report.Valid = false
+		}
+	}
+
+	for key := range actualInsertMap {
+		if _, exists := expectedInsertMap[key]; !exists {
+			report.UnexpectedInsertions = append(
+				report.UnexpectedInsertions,
+				key,
+			)
+			report.Valid = false
+		}
+	}
+
+	// Compare updates
+	for key, value := range expectedUpdateMap {
+		if actualValue, exists := actualUpdateMap[key]; !exists {
+			report.MissingUpdates = append(report.MissingUpdates, key)
+			report.Valid = false
+		} else if actualValue != value {
+			report.Errors = append(report.Errors, fmt.Sprintf("Update value mismatch for key %s: expected %s, got %s", key, value, actualValue))
+			report.Valid = false
+		}
+	}
+
+	for key := range actualUpdateMap {
+		if _, exists := expectedUpdateMap[key]; !exists {
+			report.UnexpectedUpdates = append(report.UnexpectedUpdates, key)
+			report.Valid = false
+		}
+	}
+
+	// Compare deletions
+	for key := range expectedDeleteSet {
+		if _, exists := actualDeleteSet[key]; !exists {
+			report.MissingDeletions = append(report.MissingDeletions, key)
+			report.Valid = false
+		}
+	}
+
+	for key := range actualDeleteSet {
+		if _, exists := expectedDeleteSet[key]; !exists {
+			report.UnexpectedDeletions = append(report.UnexpectedDeletions, key)
+			report.Valid = false
+		}
+	}
+
+	return report, nil
+}
+
 func (s *ChainEventProcessorActor) withGuard(
 	slot uint64,
 	label string,
@@ -93,13 +266,15 @@ func (s *ChainEventProcessorActor) withGuard(
 	}
 }
 
-// getOrFetchValidatorUTxO fetches/caches the singleton UTxO
+// getOrFetchValidatorUTxO fetches/caches the singleton UTxO.
+// Note: The global validator UTXO cache is actor-single-threaded and safe within this actor context.
+// The shallow copy returned is safe for use within this actor but should not be shared across goroutines.
 func (s *ChainEventProcessorActor) getOrFetchValidatorUTxO(
 	ctx context.Context,
 ) (*apolloUTxO.UTxO, error) {
 	if cu := GetGlobalValidatorUtxo(); cu != nil {
 		s.logger.Debug("Using cached validator UTXO")
-		// shallow copy
+		// shallow copy - safe within actor context (single-threaded)
 		return &apolloUTxO.UTxO{Input: cu.Input, Output: cu.Output}, nil
 	}
 	s.logger.Debug("Cached validator UTXO not available, querying provider...")
@@ -137,31 +312,17 @@ func (s *ChainEventProcessorActor) decodeValidatorDatumFromUTxO(
 	return decoded, cborBytes, nil
 }
 
-// Computes trie diffs (insert/update/delete) between oracleData and currentCloudData
-func (s *ChainEventProcessorActor) diffTrieOps(
-	mem trieLike,
-	oracleData, currentCloudData []map[string]interface{},
-) (insertions []KVHex, updates []KVHex, deletions []KeyHex) {
+// diffTrieOpsCore returns both bytes (for trie operations) and hex (for payload) versions
+// This is the core implementation used by both diffTrieOps and diffTrieOpsFromHexState
+func (s *ChainEventProcessorActor) diffTrieOpsCore(
+	oracleData []map[string]interface{},
+	currentStateMap map[[32]byte][32]byte,
+) (insB []kvBytes, updB []kvBytes, delB [][32]byte, insHex []KVHex, updHex []KVHex, delHex []KeyHex) {
 
-	// get current keys from cloud snapshot
-	currentKeys := make(map[string]bool)
-	for _, item := range currentCloudData {
-		objID, ok := item["object_id"].(string)
-		if !ok || objID == "" {
-			continue
-		}
-		for k := range item {
-			if k == "object_id" {
-				continue
-			}
-			keyHex := s.keyHashHex(objID, k)
-			currentKeys[keyHex] = true
-		}
-	}
+	seen := make(map[[32]byte]struct{}, len(currentStateMap))
+	insB = make([]kvBytes, 0, len(oracleData))
+	updB = make([]kvBytes, 0, len(oracleData))
 
-	oracleKeys := make(map[string]bool)
-
-	// decide insert vs update using in-memory trie
 	for _, item := range oracleData {
 		objID, ok := item["object_id"].(string)
 		if !ok || objID == "" {
@@ -171,92 +332,104 @@ func (s *ChainEventProcessorActor) diffTrieOps(
 			if k == "object_id" {
 				continue
 			}
-			keyHash := s.db.Hash([]byte(objID + ":" + k))
-			keyHex := hex.EncodeToString(keyHash)
-			valHex, err := s.valueHashHex(v)
+			kh := bytes32(s.db.Hash([]byte(objID + ":" + k)))
+			valBytes, err := json.Marshal(v)
 			if err != nil {
-				s.logger.Errorf(
-					"failed to hash value for %s:%s: %v",
-					objID,
-					k,
-					err,
-				)
+				s.logger.Warnf("marshal value for %s:%s: %v", objID, k, err)
 				continue
 			}
-			oracleKeys[keyHex] = true
-			if mem.Has(keyHash) {
-				updates = append(updates, KVHex{Key: keyHex, Value: valHex})
-			} else {
-				insertions = append(insertions, KVHex{Key: keyHex, Value: valHex})
+			vh := bytes32(s.db.Hash(valBytes))
+
+			if pv, existed := currentStateMap[kh]; !existed {
+				insB = append(insB, kvBytes{k: kh, v: vh})
+			} else if pv != vh {
+				updB = append(updB, kvBytes{k: kh, v: vh})
+				// else unchanged -> no-op
 			}
+			seen[kh] = struct{}{}
 		}
 	}
 
-	// missing keys means deletions
-	for keyHex := range currentKeys {
-		if !oracleKeys[keyHex] {
-			deletions = append(deletions, KeyHex{Key: keyHex})
+	delB = make([][32]byte, 0, len(currentStateMap))
+	for kh := range currentStateMap {
+		if _, ok := seen[kh]; !ok {
+			delB = append(delB, kh)
 		}
 	}
 
+	insHex = make([]KVHex, len(insB))
+	for i, e := range insB {
+		insHex[i] = KVHex{
+			Key:   hex.EncodeToString(e.k[:]),
+			Value: hex.EncodeToString(e.v[:]),
+		}
+	}
+	updHex = make([]KVHex, len(updB))
+	for i, e := range updB {
+		updHex[i] = KVHex{
+			Key:   hex.EncodeToString(e.k[:]),
+			Value: hex.EncodeToString(e.v[:]),
+		}
+	}
+	delHex = make([]KeyHex, len(delB))
+	for i, k := range delB {
+		delHex[i] = KeyHex{Key: hex.EncodeToString(k[:])}
+	}
 	return
 }
 
-// apply the hex-encoded trie ops to the in-memory trie in a single place
+// diffTrieOpsFromHexState computes trie ops between a previous state (hex key->hex value)
+// and a current full snapshot (object_id + primitive fields). Only marks update
+// if the value hash changed; unchanged keys are no-ops.
+func (s *ChainEventProcessorActor) diffTrieOpsFromHexState(
+	previousState map[string]string, // key_hash_hex -> value_hash_hex
+	oracleData []map[string]interface{},
+) (insertions []KVHex, updates []KVHex, deletions []KeyHex) {
+
+	// Convert previousState from hex strings to byte arrays
+	prevStateMap := make(map[[32]byte][32]byte, len(previousState))
+	for keyHex, valueHex := range previousState {
+		keyBytes, err := hex.DecodeString(keyHex)
+		if err != nil {
+			s.logger.Errorf("failed to decode key hex %s: %v", keyHex, err)
+			continue
+		}
+		valueBytes, err := hex.DecodeString(valueHex)
+		if err != nil {
+			s.logger.Errorf("failed to decode value hex %s: %v", valueHex, err)
+			continue
+		}
+		prevStateMap[bytes32(keyBytes)] = bytes32(valueBytes)
+	}
+
+	// Use the core function
+	_, _, _, insertions, updates, deletions = s.diffTrieOpsCore(
+		oracleData,
+		prevStateMap,
+	)
+	return
+}
+
+// apply ops to trie without hex decoding
 func (s *ChainEventProcessorActor) applyTrieOperations(
 	mem trieLike,
-	insertions []KVHex,
-	updates []KVHex,
-	deletions []KeyHex,
+	ins []kvBytes,
+	ups []kvBytes,
+	del [][32]byte,
 	slot uint64,
 ) error {
-	for _, in := range insertions {
-		kb, err := decodeHexBytes(in.Key)
-		if err != nil {
-			return fmt.Errorf("decode insertion key %s: %w", in.Key, err)
-		}
-		vb, err := decodeHexBytes(in.Value)
-		if err != nil {
-			return fmt.Errorf("decode insertion value %s: %w", in.Value, err)
-		}
-		s.logger.Debugw(
-			"TRIE_DEBUG(BUILD): trie insert",
-			"key",
-			in.Key,
-			"value",
-			in.Value,
-		)
-		if err := mem.Update(kb, vb, slot); err != nil {
+	for _, e := range ins {
+		if err := mem.Update(e.k[:], e.v[:], slot); err != nil {
 			return fmt.Errorf("trie insert failed: %w", err)
 		}
 	}
-	for _, up := range updates {
-		kb, err := decodeHexBytes(up.Key)
-		if err != nil {
-			return fmt.Errorf("decode update key %s: %w", up.Key, err)
-		}
-		vb, err := decodeHexBytes(up.Value)
-		if err != nil {
-			return fmt.Errorf("decode update value %s: %w", up.Value, err)
-		}
-		s.logger.Debugw(
-			"TRIE_DEBUG(BUILD): trie update",
-			"key",
-			up.Key,
-			"value",
-			up.Value,
-		)
-		if err := mem.Update(kb, vb, slot); err != nil {
+	for _, e := range ups {
+		if err := mem.Update(e.k[:], e.v[:], slot); err != nil {
 			return fmt.Errorf("trie update failed: %w", err)
 		}
 	}
-	for _, del := range deletions {
-		kb, err := decodeHexBytes(del.Key)
-		if err != nil {
-			return fmt.Errorf("decode deletion key %s: %w", del.Key, err)
-		}
-		s.logger.Debugw("TRIE_DEBUG(BUILD): trie delete", "key", del.Key)
-		if err := mem.Delete(kb); err != nil {
+	for _, k := range del {
+		if err := mem.Delete(k[:]); err != nil {
 			return fmt.Errorf("trie delete failed: %w", err)
 		}
 	}
@@ -288,12 +461,12 @@ type ChainEventProcessorActor struct {
 	progressBar *progressbar.ProgressBar
 
 	trieRootMismatchCount           int
-	lastSucessfullyIndexedSlot      uint64
+	lastSuccessfullyIndexedSlot     uint64
 	lastSucessfullyIndexedBlockHash string
 
-	processedBlockMap map[BlockKey]bool
+	processedBlockMap map[BlockKey]struct{}
 
-	blockTransactionCountMap map[uint64]uint64
+	blockTransactionCountMap map[BlockKey]uint64
 }
 
 func NewChainEventProcessorStrategy(
@@ -319,10 +492,10 @@ func NewChainEventProcessorStrategy(
 			justStarted:                     true,
 			failedAtSlot:                    0,
 			trieRootMismatchCount:           0,
-			lastSucessfullyIndexedSlot:      cfg.StartBlockSlot,
+			lastSuccessfullyIndexedSlot:     cfg.StartBlockSlot,
 			lastSucessfullyIndexedBlockHash: cfg.StartBlockHash,
-			processedBlockMap:               make(map[BlockKey]bool),
-			blockTransactionCountMap:        make(map[uint64]uint64),
+			processedBlockMap:               make(map[BlockKey]struct{}),
+			blockTransactionCountMap:        make(map[BlockKey]uint64),
 		}
 	}
 }
@@ -403,7 +576,12 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 			"slot_number", msg.BlockEvent.Block.SlotNumber(),
 			"tip_reached", msg.TipReached)
 
-		s.blockTransactionCountMap[msg.BlockEvent.Block.BlockNumber()] = msg.BlockEvent.TransactionCount
+		blockKey := s.createBlockKey(
+			msg.BlockEvent.Block.BlockNumber(),
+			msg.BlockEvent.Block.Hash().String(),
+			msg.BlockEvent.Block.SlotNumber(),
+		)
+		s.blockTransactionCountMap[blockKey] = msg.BlockEvent.TransactionCount
 
 		if s.justStarted {
 			if msg.BlockEvent.Block.SlotNumber() <= s.startBlockSlot {
@@ -454,29 +632,33 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 				return err
 			}
 
-			blockTransactionCount, exists := s.blockTransactionCountMap[msg.EventContext.BlockNumber]
-			if exists {
-				s.blockTransactionCountMap[msg.EventContext.BlockNumber] = blockTransactionCount - 1
-				if blockTransactionCount-1 == 0 {
-					blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
-					if err := s.db.AddCursorPoint(common.Point{
-						Hash: blockHash,
-						Slot: msg.EventContext.SlotNumber,
-					}); err != nil {
-						s.logger.Errorf("failed to update cursor: %v", err)
-					}
+			blockKey := s.createBlockKey(
+				msg.EventContext.BlockNumber,
+				msg.EventTransaction.BlockHash,
+				msg.EventContext.SlotNumber,
+			)
+			if cnt := s.blockTransactionCountMap[blockKey]; cnt <= 1 {
+				delete(s.blockTransactionCountMap, blockKey)
+				blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
+				if err := s.db.AddCursorPoint(common.Point{
+					Hash: blockHash,
+					Slot: msg.EventContext.SlotNumber,
+				}); err != nil {
+					s.logger.Errorf("failed to update cursor: %v", err)
 				}
+			} else if cnt > 1 {
+				s.blockTransactionCountMap[blockKey] = cnt - 1
 			} else {
-				s.logger.Errorf("block transaction count not found for block %d", msg.EventContext.BlockNumber)
+				s.logger.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
 			}
 
-			// build after all block transactinos are processed to make sure we build with updated trie WRT the utxo being consumed
-			if s.blockTransactionCountMap[msg.EventContext.BlockNumber] == 0 {
+			// build after all block transactions are processed to make sure we build with updated trie WRT the utxo being consumed
+			if _, exists := s.blockTransactionCountMap[blockKey]; !exists {
 				s.logger.Debug("All transactions for block processed, attempting transaction building")
 				if err := s.processBlockEvent(msg); err != nil {
 					return fmt.Errorf("block processing: %w", err)
 				}
-				s.lastSucessfullyIndexedSlot = msg.EventContext.BlockNumber
+				s.lastSuccessfullyIndexedSlot = msg.EventContext.SlotNumber
 				s.lastSucessfullyIndexedBlockHash = msg.EventTransaction.BlockHash
 			}
 			return nil
@@ -563,7 +745,7 @@ func (s *ChainEventProcessorActor) processBlockEvent(
 		return nil
 	}
 
-	s.processedBlockMap[blockKey] = true
+	s.processedBlockMap[blockKey] = struct{}{}
 
 	s.logger.Debugw("processing block event",
 		"block_number", event.EventContext.BlockNumber,
@@ -657,7 +839,7 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 			)
 			s.triggerIndexerRestart(
 				"trie_root_mismatch",
-				s.lastSucessfullyIndexedSlot,
+				s.lastSuccessfullyIndexedSlot,
 				s.lastSucessfullyIndexedBlockHash,
 			)
 			// no need to return error here, as we will restart the indexer
@@ -691,29 +873,9 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	ipfsCidHex := hex.EncodeToString(decodedValidatorDatum.IpfsCid)
 	ipfsCidDecoded := tx.DecodeHexIfValid(ipfsCidHex)
 
-	var currentCloudData []map[string]interface{}
 	previousFileReference := ""
 	if ipfsCidHex != config.NullTrieHash {
-		s.logger.Infof(
-			"Reading current cloud data from IPFS CID: %s",
-			ipfsCidDecoded,
-		)
-		if cloudData, readErr := s.cloud.Read(cloud.Ref(ipfsCidDecoded)); readErr != nil {
-			s.logger.Warnf("Failed to read current cloud data: %v", readErr)
-		} else {
-			var payload struct {
-				Data                  []map[string]interface{} `json:"data"`
-				CurrentMerkleRoot     string                   `json:"currentMerkleRoot"`
-				PreviousFileReference string                   `json:"previousFileReference"`
-			}
-			if err := json.Unmarshal(cloudData, &payload); err != nil {
-				s.logger.Warnf("Failed to decode current cloud data JSON: %v", err)
-			} else {
-				currentCloudData = payload.Data
-				previousFileReference = ipfsCidDecoded
-				s.logger.Infof("Loaded %d items from current cloud data", len(currentCloudData))
-			}
-		}
+		previousFileReference = ipfsCidDecoded
 	}
 
 	// normalize oracle data to []map[string]interface{} and ensure object_id
@@ -747,7 +909,15 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		oracleDataMap[i] = m
 	}
 
-	ins, ups, dels := s.diffTrieOps(memTrie, oracleDataMap, currentCloudData)
+	currentStateMap, err := s.db.GetCurrentStateMap(context.Background())
+	if err != nil {
+		return err
+	}
+
+	insB, updB, delB, ins, ups, dels := s.diffTrieOpsCore(
+		oracleDataMap,
+		currentStateMap,
+	)
 	s.logger.Infow(
 		"Calculated trie operations",
 		"insertions",
@@ -783,8 +953,7 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	uploadPayload.TrieData.Updates = ups
 	uploadPayload.TrieData.Deletions = dels
 
-	// apply ops to local trie
-	if err := s.applyTrieOperations(memTrie, ins, ups, dels, currentSlot); err != nil {
+	if err := s.applyTrieOperations(memTrie, insB, updB, delB, currentSlot); err != nil {
 		return err
 	}
 	updatedTrieRoot := memTrie.Hash()
@@ -842,7 +1011,10 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	}
 
 	submit := func() (string, error) {
-		txBytes, _ := txObj.Bytes()
+		txBytes, err := txObj.Bytes()
+		if err != nil {
+			return "", fmt.Errorf("tx bytes: %w", err)
+		}
 		return provider.SubmitTx(s.appCfg, s.provider, txBytes)
 	}
 
@@ -1076,6 +1248,57 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			return fmt.Errorf("failed to decode cloud data JSON: %v", err)
 		}
 
+		previousState, err := s.getStateFromDB(payload.PreviousFileReference)
+		if err != nil {
+			return fmt.Errorf("failed to get previous state from DB: %v", err)
+		}
+
+		validationReport, err := s.validateTrieOperations(
+			payload.Data,
+			previousState,
+			payload.TrieData.Insertions,
+			payload.TrieData.Updates,
+			payload.TrieData.Deletions,
+		)
+		if err != nil {
+			s.logger.Warnw("Failed to validate trie operations", "error", err)
+		} else if !validationReport.Valid {
+			s.logger.Warnw("Trie operations validation failed",
+				"missing_insertions", len(validationReport.MissingInsertions),
+				"unexpected_insertions", len(validationReport.UnexpectedInsertions),
+				"missing_updates", len(validationReport.MissingUpdates),
+				"unexpected_updates", len(validationReport.UnexpectedUpdates),
+				"missing_deletions", len(validationReport.MissingDeletions),
+				"unexpected_deletions", len(validationReport.UnexpectedDeletions),
+				"errors", len(validationReport.Errors),
+			)
+
+			if len(validationReport.MissingInsertions) > 0 {
+				s.logger.Debugw("Missing insertions", "keys", validationReport.MissingInsertions)
+			}
+			if len(validationReport.UnexpectedInsertions) > 0 {
+				s.logger.Debugw("Unexpected insertions", "keys", validationReport.UnexpectedInsertions)
+			}
+			if len(validationReport.MissingUpdates) > 0 {
+				s.logger.Debugw("Missing updates", "keys", validationReport.MissingUpdates)
+			}
+			if len(validationReport.UnexpectedUpdates) > 0 {
+				s.logger.Debugw("Unexpected updates", "keys", validationReport.UnexpectedUpdates)
+			}
+			if len(validationReport.MissingDeletions) > 0 {
+				s.logger.Debugw("Missing deletions", "keys", validationReport.MissingDeletions)
+			}
+			if len(validationReport.UnexpectedDeletions) > 0 {
+				s.logger.Debugw("Unexpected deletions", "keys", validationReport.UnexpectedDeletions)
+			}
+			if len(validationReport.Errors) > 0 {
+				s.logger.Debugw("Validation errors", "errors", validationReport.Errors)
+			}
+
+		} else {
+			s.logger.Infow("Trie operations validation passed successfully")
+		}
+
 		// build map of key_hash -> (object_id, raw_key, raw_value) from the full snapshot `data`
 		type rawTriple struct {
 			objID string
@@ -1096,7 +1319,7 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 					continue
 				}
 				// Compute key hash = blake2b256(object_id + ":" + raw_key)
-				kh := blake2b.Sum256([]byte(objID + ":" + k))
+				kh := bytes32(s.db.Hash([]byte(objID + ":" + k)))
 
 				// Marshal raw value back to JSON (primitives only)
 				valBytes, err := json.Marshal(v)
@@ -1300,6 +1523,17 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		}
 	}
 
+	var deletedTransactionCountEntries []BlockKey
+	for blockKey := range s.blockTransactionCountMap {
+		if blockKey.SlotNumber > rollbackEvent.SlotNumber {
+			delete(s.blockTransactionCountMap, blockKey)
+			deletedTransactionCountEntries = append(
+				deletedTransactionCountEntries,
+				blockKey,
+			)
+		}
+	}
+
 	if len(deletedBlocks) > 0 {
 		s.logger.Debugf(
 			"Removed %d processed block entries for blocks with slot > %d",
@@ -1309,6 +1543,14 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		for _, deletedBlock := range deletedBlocks {
 			s.logger.Debugf("Removed block: %s", deletedBlock.String())
 		}
+	}
+
+	if len(deletedTransactionCountEntries) > 0 {
+		s.logger.Debugf(
+			"Removed %d block transaction count entries for blocks with slot > %d",
+			len(deletedTransactionCountEntries),
+			rollbackEvent.SlotNumber,
+		)
 	}
 
 	return nil
