@@ -304,3 +304,123 @@ func encodeCanonical(v any, b *bytes.Buffer) error {
 	}
 	return nil
 }
+
+type keyRow struct {
+	KeyHash          []byte `gorm:"column:key_hash"`
+	CurrentValueHash []byte `gorm:"column:current_value_hash"`
+}
+
+func bytes32(b []byte) (out [32]byte) { copy(out[:], b); return }
+
+// GetCurrentStateMap retrieves all current keys and their value hashes from the database
+// and returns them as a map for efficient lookups during trie operations.
+func (d *Database) GetCurrentStateMap(
+	ctx context.Context,
+) (map[[32]byte][32]byte, error) {
+	var rows []keyRow
+	if err := d.db.WithContext(ctx).
+		Model(&Key{}).
+		Select("key_hash, current_value_hash").
+		Where("deleted_at IS NULL AND current_value_hash IS NOT NULL").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to query current keys: %w", err)
+	}
+
+	currentStateMap := make(map[[32]byte][32]byte, len(rows))
+	for _, r := range rows {
+		if len(r.KeyHash) == 32 && len(r.CurrentValueHash) == 32 {
+			currentStateMap[bytes32(r.KeyHash)] = bytes32(r.CurrentValueHash)
+		}
+	}
+
+	return currentStateMap, nil
+}
+
+// GetStateMapAtSlot retrieves the state of the trie at a specific slot.
+// It reconstructs the key-value map by looking at the last operation for each key up to the given slot.
+func (d *Database) GetStateMapAtSlot(
+	ctx context.Context,
+	slot uint64,
+) (map[[32]byte][32]byte, error) {
+
+	type keyVal struct {
+		KeyHash   []byte `gorm:"column:key_hash"`
+		ValueHash []byte `gorm:"column:value_hash"`
+	}
+
+	var results []keyVal
+
+	// finds the latest operation for each key at or before specified slot
+	rawQuery := `
+		SELECT key_hash, value_hash
+		FROM (
+			SELECT DISTINCT ON (tok.key_hash)
+				   tok.key_hash, 
+				   tok.value_hash, 
+				   o.operation_type
+			FROM trie_operation_key tok
+			JOIN trie_operation o ON o.id = tok.trie_operation_id
+			JOIN trie t ON t.id = o.trie_id
+			WHERE t.slot <= ?
+			ORDER BY
+				tok.key_hash,
+				t.slot DESC,
+				t.id DESC,
+				CASE o.operation_type
+					WHEN 'insert' THEN 1
+					WHEN 'update' THEN 2
+					WHEN 'delete' THEN 3
+				END DESC,
+				o.sequence_order DESC,
+				o.id DESC
+		) last_ops
+		WHERE operation_type <> 'delete' AND value_hash IS NOT NULL
+	`
+
+	if err := d.db.WithContext(ctx).Raw(rawQuery, slot).Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to query state at slot %d: %w",
+			slot,
+			err,
+		)
+	}
+
+	stateMap := make(map[[32]byte][32]byte, len(results))
+	for _, r := range results {
+		if len(r.KeyHash) == 32 && len(r.ValueHash) == 32 {
+			stateMap[bytes32(r.KeyHash)] = bytes32(r.ValueHash)
+		}
+	}
+
+	return stateMap, nil
+}
+
+func (d *Database) GetOracleFileByCID(
+	ctx context.Context,
+	cid string,
+) (*OracleFile, error) {
+	var oracleFile OracleFile
+	if err := d.db.WithContext(ctx).Where("cid = ?", cid).First(&oracleFile).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to find oracle file with CID %s: %w",
+			cid,
+			err,
+		)
+	}
+	return &oracleFile, nil
+}
+
+func (d *Database) GetTrieByOracleFileID(
+	ctx context.Context,
+	oracleFileID int64,
+) (*Trie, error) {
+	var trie Trie
+	if err := d.db.WithContext(ctx).Where("oracle_file_id = ?", oracleFileID).First(&trie).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to find trie for oracle file ID %d: %w",
+			oracleFileID,
+			err,
+		)
+	}
+	return &trie, nil
+}
