@@ -95,6 +95,8 @@ func Start(
 	// Object endpoints
 	router.GET("/objects", handleGetAllObjectIDs)
 	router.GET("/objects/:id", handleGetObjectByID)
+	router.GET("/objects/active", handleGetActiveObjectIDs)
+	router.GET("/objects/deleted", handleGetDeletedObjectIDs)
 
 	// Statistics endpoints
 	router.GET("/statistics/costs", handleGetCostStatistics)
@@ -282,58 +284,10 @@ func handleGetAllObjectIDs(c *gin.Context) {
 	db := c.MustGet("db").(*database.Database)
 	cfg := c.MustGet("cfg").(*config.Config)
 
-	limitStr := c.Query("limit")
-	limit := cfg.Server.DefaultPageLimit
-	if limitStr != "" {
-		parsedLimit, err := strconv.Atoi(limitStr)
-		if err != nil {
-			BadRequest(
-				c,
-				fmt.Errorf("invalid limit parameter: must be a number"),
-			)
-			return
-		}
-		if parsedLimit <= 0 {
-			BadRequest(
-				c,
-				fmt.Errorf("invalid limit parameter: must be greater than 0"),
-			)
-			return
-		}
-		if parsedLimit > cfg.Server.MaxPageLimit {
-			BadRequest(
-				c,
-				fmt.Errorf(
-					"invalid limit parameter: maximum allowed is %d",
-					cfg.Server.MaxPageLimit,
-				),
-			)
-			return
-		}
-		limit = parsedLimit
-	}
-
-	offsetStr := c.Query("offset")
-	offset := 0
-	if offsetStr != "" {
-		parsedOffset, err := strconv.Atoi(offsetStr)
-		if err != nil {
-			BadRequest(
-				c,
-				fmt.Errorf("invalid offset parameter: must be a number"),
-			)
-			return
-		}
-		if parsedOffset < 0 {
-			BadRequest(
-				c,
-				fmt.Errorf(
-					"invalid offset parameter: must be greater than or equal to 0",
-				),
-			)
-			return
-		}
-		offset = parsedOffset
+	limit, offset, err := parsePageParams(c, cfg)
+	if err != nil {
+		BadRequest(c, err)
+		return
 	}
 
 	result, err := db.GetAllObjectIDs(c.Request.Context(), limit, offset)
@@ -343,6 +297,114 @@ func handleGetAllObjectIDs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// handleGetActiveObjectIDs godoc
+// @Summary      Get Active Object IDs
+// @Description  Retrieves a paginated list of object IDs that have at least one non-deleted key from the database.
+// @Tags         objects
+// @Accept       json
+// @Produce      json
+// @Param        limit   query     int     false  "Number of items per page (default: 20, max: 1000)"
+// @Param        offset  query     int     false  "Number of items to skip (default: 0)"
+// @Success      200  {object}  database.GetAllObjectIDsResult "Paginated list of active object IDs"
+// @Failure      400  {object}  map[string]string "Invalid query parameters"
+// @Failure      500  {object}  map[string]string "Internal server error"
+// @Router       /objects/active [get]
+func handleGetActiveObjectIDs(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+	cfg := c.MustGet("cfg").(*config.Config)
+
+	limit, offset, err := parsePageParams(c, cfg)
+	if err != nil {
+		BadRequest(c, err)
+		return
+	}
+
+	result, err := db.GetActiveObjectIDs(c.Request.Context(), limit, offset)
+	if err != nil {
+		ServerError(c, fmt.Errorf("failed to get active object IDs: %w", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// handleGetDeletedObjectIDs godoc
+// @Summary      Get Deleted Object IDs
+// @Description  Retrieves a paginated list of object IDs that have no non-deleted keys from the database.
+// @Tags         objects
+// @Accept       json
+// @Produce      json
+// @Param        limit   query     int     false  "Number of items per page (default: 20, max: 1000)"
+// @Param        offset  query     int     false  "Number of items to skip (default: 0)"
+// @Success      200  {object}  database.GetAllObjectIDsResult "Paginated list of deleted object IDs"
+// @Failure      400  {object}  map[string]string "Invalid query parameters"
+// @Failure      500  {object}  map[string]string "Internal server error"
+// @Router       /objects/deleted [get]
+func handleGetDeletedObjectIDs(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+	cfg := c.MustGet("cfg").(*config.Config)
+
+	limit, offset, err := parsePageParams(c, cfg)
+	if err != nil {
+		BadRequest(c, err)
+		return
+	}
+
+	result, err := db.GetDeletedObjectIDs(c.Request.Context(), limit, offset)
+	if err != nil {
+		ServerError(c, fmt.Errorf("failed to get deleted object IDs: %w", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// parsePageParams extracts and validates limit and offset parameters
+func parsePageParams(
+	c *gin.Context,
+	cfg *config.Config,
+) (limit, offset int, err error) {
+	limitStr := c.Query("limit")
+	limit = cfg.Server.DefaultPageLimit
+	if limitStr != "" {
+		parsedLimit, parseErr := strconv.Atoi(limitStr)
+		if parseErr != nil {
+			return 0, 0, fmt.Errorf("invalid limit parameter: must be a number")
+		}
+		if parsedLimit <= 0 {
+			return 0, 0, fmt.Errorf(
+				"invalid limit parameter: must be greater than 0",
+			)
+		}
+		if parsedLimit > cfg.Server.MaxPageLimit {
+			return 0, 0, fmt.Errorf(
+				"invalid limit parameter: maximum allowed is %d",
+				cfg.Server.MaxPageLimit,
+			)
+		}
+		limit = parsedLimit
+	}
+
+	offsetStr := c.Query("offset")
+	offset = 0
+	if offsetStr != "" {
+		parsedOffset, parseErr := strconv.Atoi(offsetStr)
+		if parseErr != nil {
+			return 0, 0, fmt.Errorf(
+				"invalid offset parameter: must be a number",
+			)
+		}
+		if parsedOffset < 0 {
+			return 0, 0, fmt.Errorf(
+				"invalid offset parameter: must be greater than or equal to 0",
+			)
+		}
+		offset = parsedOffset
+	}
+
+	return limit, offset, nil
 }
 
 // handleGetCostStatistics godoc

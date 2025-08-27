@@ -472,7 +472,6 @@ type GetAllObjectIDsResult struct {
 	Total     int64    `json:"total"`
 	Limit     int      `json:"limit"`
 	Offset    int      `json:"offset"`
-	HasMore   bool     `json:"hasMore"`
 }
 
 // GetAllObjectIDs returns a paginated list of all tracked object IDs
@@ -650,4 +649,91 @@ func (d *Database) GetCostStatistics(
 	}
 
 	return &stats, nil
+}
+
+// GetActiveObjectIDs returns object IDs that have at least one non-deleted key
+func (d *Database) GetActiveObjectIDs(
+	ctx context.Context,
+	limit, offset int,
+) (*GetAllObjectIDsResult, error) {
+
+	var total int64
+	// Count distinct active object_ids directly from key
+	if err := d.db.WithContext(ctx).
+		Table("key").
+		Where("deleted_at IS NULL AND NOT is_deleted").
+		Distinct("object_id").
+		Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("failed to count active objects: %w", err)
+	}
+
+	var ids []string
+	// Page distinct active object_ids
+	if err := d.db.WithContext(ctx).
+		Table("key").
+		Where("deleted_at IS NULL AND NOT is_deleted").
+		Distinct().
+		Order("object_id ASC").
+		Limit(limit).
+		Offset(offset).
+		Pluck("object_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to get active object IDs: %w", err)
+	}
+
+	return &GetAllObjectIDsResult{
+		ObjectIDs: ids,
+		Total:     total,
+		Limit:     limit,
+		Offset:    offset,
+	}, nil
+}
+
+// GetDeletedObjectIDs returns object IDs that have no non-deleted keys
+func (d *Database) GetDeletedObjectIDs(
+	ctx context.Context,
+	limit, offset int,
+) (*GetAllObjectIDsResult, error) {
+
+	var totalObjects int64
+	if err := d.db.WithContext(ctx).
+		Model(&Object{}).
+		Count(&totalObjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to count objects: %w", err)
+	}
+
+	var activeObjects int64
+	if err := d.db.WithContext(ctx).
+		Table("key").
+		Where("deleted_at IS NULL AND NOT is_deleted").
+		Distinct("object_id").
+		Count(&activeObjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to count active objects: %w", err)
+	}
+	totalDeleted := totalObjects - activeObjects
+
+	// Page deleted object IDs (objects with NO active keys)
+	var ids []string
+	// NOT EXISTS uses the partial index above on (object_id) for fast checks
+	if err := d.db.WithContext(ctx).
+		Table(`"object"`). // quoted because the table is named "object"
+		Where(`NOT EXISTS (
+			SELECT 1
+			  FROM key
+			 WHERE key.object_id = "object".id
+			   AND key.deleted_at IS NULL
+			   AND NOT key.is_deleted
+		)`).
+		Order(`"object".id ASC`).
+		Limit(limit).
+		Offset(offset).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to get deleted object IDs: %w", err)
+	}
+
+	return &GetAllObjectIDsResult{
+		ObjectIDs: ids,
+		Total:     totalDeleted,
+		Limit:     limit,
+		Offset:    offset,
+	}, nil
 }

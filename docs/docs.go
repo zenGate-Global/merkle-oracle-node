@@ -97,6 +97,116 @@ const docTemplate = `{
                 }
             }
         },
+        "/objects/active": {
+            "get": {
+                "description": "Retrieves a paginated list of object IDs that have at least one non-deleted key from the database.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "objects"
+                ],
+                "summary": "Get Active Object IDs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page (default: 20, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of active object IDs",
+                        "schema": {
+                            "$ref": "#/definitions/database.GetAllObjectIDsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/objects/deleted": {
+            "get": {
+                "description": "Retrieves a paginated list of object IDs that have no non-deleted keys from the database.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "objects"
+                ],
+                "summary": "Get Deleted Object IDs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page (default: 20, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of deleted object IDs",
+                        "schema": {
+                            "$ref": "#/definitions/database.GetAllObjectIDsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/objects/{id}": {
             "get": {
                 "description": "Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp to get historical state.",
@@ -226,9 +336,6 @@ const docTemplate = `{
         "database.GetAllObjectIDsResult": {
             "type": "object",
             "properties": {
-                "hasMore": {
-                    "type": "boolean"
-                },
                 "limit": {
                     "type": "integer"
                 },

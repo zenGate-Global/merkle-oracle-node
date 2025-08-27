@@ -20,6 +20,7 @@ CREATE INDEX IF NOT EXISTS value_raw_gin       ON value USING GIN (raw jsonb_pat
 CREATE INDEX IF NOT EXISTS key_object_raw_idx  ON key (object_id, raw_key);
 CREATE INDEX IF NOT EXISTS key_current_val_idx ON key (current_value_hash);
 CREATE INDEX IF NOT EXISTS key_not_deleted_idx ON key (key_hash) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS key_active_by_object_idx ON key (object_id) WHERE deleted_at IS NULL AND is_deleted = FALSE;
 CREATE INDEX IF NOT EXISTS trie_op_apply_idx   ON trie_operation (trie_id, operation_type, sequence_order);
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_trie_op ON trie_operation (trie_id, operation_type, sequence_order);
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_tok_op_key ON trie_operation_key (trie_operation_id, key_hash);

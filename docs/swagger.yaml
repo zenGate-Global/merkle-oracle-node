@@ -19,8 +19,6 @@ definitions:
     type: object
   database.GetAllObjectIDsResult:
     properties:
-      hasMore:
-        type: boolean
       limit:
         type: integer
       objectIds:
@@ -136,6 +134,80 @@ paths:
               type: string
             type: object
       summary: Get Object by ID
+      tags:
+      - objects
+  /objects/active:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a paginated list of object IDs that have at least one
+        non-deleted key from the database.
+      parameters:
+      - description: 'Number of items per page (default: 20, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Number of items to skip (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated list of active object IDs
+          schema:
+            $ref: '#/definitions/database.GetAllObjectIDsResult'
+        "400":
+          description: Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Active Object IDs
+      tags:
+      - objects
+  /objects/deleted:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a paginated list of object IDs that have no non-deleted
+        keys from the database.
+      parameters:
+      - description: 'Number of items per page (default: 20, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Number of items to skip (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated list of deleted object IDs
+          schema:
+            $ref: '#/definitions/database.GetAllObjectIDsResult'
+        "400":
+          description: Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Deleted Object IDs
       tags:
       - objects
   /statistics/costs:
