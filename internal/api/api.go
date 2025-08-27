@@ -28,6 +28,8 @@ import (
 // @tag.description Object Queries
 // @tag.name     system
 // @tag.description System status and health monitoring endpoints
+// @tag.name     statistics
+// @tag.description Statistics and analytics endpoints
 // @schemes      http https
 
 var scalarHTML []byte
@@ -93,6 +95,9 @@ func Start(
 	// Object endpoints
 	router.GET("/objects", handleGetAllObjectIDs)
 	router.GET("/objects/:id", handleGetObjectByID)
+
+	// Statistics endpoints
+	router.GET("/statistics/costs", handleGetCostStatistics)
 
 	// Setup metrics endpoint
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
@@ -338,6 +343,27 @@ func handleGetAllObjectIDs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// handleGetCostStatistics godoc
+// @Summary      Get Cost Statistics
+// @Description  Retrieves transaction fee statistics including total fees, averages, min/max values, and slot information.
+// @Tags         statistics
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  database.CostStatistics "Cost statistics"
+// @Failure      500  {object}  map[string]string "Internal server error"
+// @Router       /statistics/costs [get]
+func handleGetCostStatistics(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+
+	stats, err := db.GetCostStatistics(c.Request.Context())
+	if err != nil {
+		ServerError(c, fmt.Errorf("failed to get cost statistics: %w", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }
 
 func ServerError(c *gin.Context, err error) {

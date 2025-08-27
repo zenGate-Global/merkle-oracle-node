@@ -45,6 +45,8 @@ type Trie struct {
 	TrieLibrary           *string    `gorm:"column:trie_library"`
 	BlockchainConfirmedAt *time.Time `gorm:"column:blockchain_confirmed_at;index:trie_confirmed_idx"`
 	Slot                  int64      `gorm:"column:slot;not null;index:trie_slot_idx"`
+	TxID                  string     `gorm:"column:txid;not null;uniqueIndex"`
+	TxFee                 uint32     `gorm:"column:tx_fee;not null"`
 	CreatedAt             time.Time  `gorm:"column:created_at;not null;default:now()"`
 
 	// belongs to OracleFile (ON DELETE CASCADE)

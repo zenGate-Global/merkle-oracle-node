@@ -33,6 +33,8 @@ type ApplyBatchParams struct {
 	PreviousMerkleRoot    *string
 	BlockchainConfirmedAt *time.Time
 	Slot                  int64
+	TxID                  string
+	TxFee                 uint32
 	Entries               []Entry
 }
 
@@ -49,6 +51,9 @@ func (d *Database) ApplyOracleFile(
 	}
 	if p.Slot <= 0 {
 		return nil, nil, errors.New("slot must be > 0")
+	}
+	if p.TxID == "" {
+		return nil, nil, errors.New("txid is required")
 	}
 
 	var outFile OracleFile
@@ -110,6 +115,8 @@ func (d *Database) ApplyOracleFile(
 			TrieLibrary:           p.TrieLibrary,
 			BlockchainConfirmedAt: p.BlockchainConfirmedAt,
 			Slot:                  p.Slot,
+			TxID:                  p.TxID,
+			TxFee:                 p.TxFee,
 		}
 		if err := tx.Create(tr).Error; err != nil {
 			return err
@@ -607,4 +614,40 @@ func (d *Database) GetObjectValuesAtTimestamp(
 		out[r.RawKey] = v
 	}
 	return out, nil
+}
+
+type CostStatistics struct {
+	TotalFees         uint64  `json:"totalFees"`
+	AverageFee        float64 `json:"averageFee"`
+	MinFee            uint32  `json:"minFee"`
+	MaxFee            uint32  `json:"maxFee"`
+	TotalTransactions int64   `json:"totalTransactions"`
+	LatestSlot        int64   `json:"latestSlot"`
+	EarliestSlot      int64   `json:"earliestSlot"`
+}
+
+// GetCostStatistics returns transaction fee statistics from the trie table
+func (d *Database) GetCostStatistics(
+	ctx context.Context,
+) (*CostStatistics, error) {
+	var stats CostStatistics
+
+	err := d.db.WithContext(ctx).
+		Model(&Trie{}).
+		Select(`
+			COALESCE(SUM(tx_fee), 0) as total_fees,
+			COALESCE(AVG(tx_fee), 0) as average_fee,
+			COALESCE(MIN(tx_fee), 0) as min_fee,
+			COALESCE(MAX(tx_fee), 0) as max_fee,
+			COUNT(*) as total_transactions,
+			COALESCE(MAX(slot), 0) as latest_slot,
+			COALESCE(MIN(slot), 0) as earliest_slot
+		`).
+		Scan(&stats).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cost statistics: %w", err)
+	}
+
+	return &stats, nil
 }

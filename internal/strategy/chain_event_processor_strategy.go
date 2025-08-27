@@ -1458,7 +1458,11 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			PreviousMerkleRoot:    prevRootPtr,
 			BlockchainConfirmedAt: &txEvent.EventTimestamp,
 			Slot:                  int64(txEvent.EventContext.SlotNumber),
-			Entries:               entries,
+			TxID:                  txHash,
+			TxFee: uint32(
+				txEvent.EventTransaction.Transaction.Fee(),
+			),
+			Entries: entries,
 		}
 
 		if _, _, err := s.db.ApplyOracleFile(context.Background(), params); err != nil {
