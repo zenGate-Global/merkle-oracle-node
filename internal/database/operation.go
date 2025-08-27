@@ -58,12 +58,12 @@ func (d *Database) ApplyOracleFile(
 		// if file already exists, return it.
 		{
 			var existing OracleFile
-			if err := tx.Where("cid = ?", p.CID).First(&existing).Error; err == nil {
-				var tr Trie
-				if err := tx.Where("oracle_file_id = ?", existing.ID).First(&tr).Error; err != nil {
-					return err
-				}
-				outFile, outTrie = existing, tr
+			if err := tx.
+				Preload("Trie").
+				Where("cid = ?", p.CID).
+				First(&existing).Error; err == nil {
+				outFile = existing
+				outTrie = *existing.Trie
 				return nil
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
@@ -82,7 +82,12 @@ func (d *Database) ApplyOracleFile(
 		var head headRow
 		_ = tx.
 			Table("trie").
-			Select("trie.id as trie_id, trie.slot, trie.current_merkle_root as current_merkle, trie.oracle_file_id, oracle_file.cid as oracle_file_cid, trie.previous_merkle_root as previous_merkle").
+			Select(`trie.id as trie_id,
+			        trie.slot,
+			        trie.current_merkle_root as current_merkle,
+			        trie.oracle_file_id,
+			        oracle_file.cid as oracle_file_cid,
+			        trie.previous_merkle_root as previous_merkle`).
 			Joins("JOIN oracle_file ON oracle_file.id = trie.oracle_file_id").
 			Order("trie.slot DESC, trie.id DESC").
 			Limit(1).
@@ -136,8 +141,19 @@ func (d *Database) ApplyOracleFile(
 				OperationType: e.OperationType,
 				SequenceOrder: e.SequenceOrder,
 			}
-			if err := tx.Create(&op).Error; err != nil {
+			// if conflict, fetch the id, this avoids conflicts
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&op).Error; err != nil {
 				return err
+			}
+			if op.ID == 0 {
+				// already exists, load its ID
+				if err := tx.
+					Select("id").
+					Where("trie_id = ? AND operation_type = ? AND sequence_order = ?",
+						tr.ID, e.OperationType, e.SequenceOrder).
+					First(&op).Error; err != nil {
+					return err
+				}
 			}
 			ops[g] = op.ID
 		}
@@ -157,18 +173,14 @@ func (d *Database) ApplyOracleFile(
 				if e.OperationType == OpInsert {
 					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie set",
-						"key",
-						hex.EncodeToString(kh[:]),
-						"value",
-						hex.EncodeToString(vh[:]),
+						"key", hex.EncodeToString(kh[:]),
+						"value", hex.EncodeToString(vh[:]),
 					)
 				} else {
 					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie update",
-						"key",
-						hex.EncodeToString(kh[:]),
-						"value",
-						hex.EncodeToString(vh[:]),
+						"key", hex.EncodeToString(kh[:]),
+						"value", hex.EncodeToString(vh[:]),
 					)
 				}
 				if err := d.UpdateTrie(kh[:], vh[:], uint64(p.Slot)); err != nil {
@@ -177,8 +189,7 @@ func (d *Database) ApplyOracleFile(
 			case OpDelete:
 				logger.Debugw(
 					"TRIE_DEBUG(APPLY): trie delete",
-					"key",
-					hex.EncodeToString(kh[:]),
+					"key", hex.EncodeToString(kh[:]),
 				)
 				if err := d.DeleteTrieEntry(kh[:]); err != nil {
 					return err
@@ -400,7 +411,12 @@ func (d *Database) GetOracleFileByCID(
 	cid string,
 ) (*OracleFile, error) {
 	var oracleFile OracleFile
-	if err := d.db.WithContext(ctx).Where("cid = ?", cid).First(&oracleFile).Error; err != nil {
+	if err := d.db.WithContext(ctx).
+		Preload("Trie").
+		Preload("ObjectsFirst").
+		Preload("ObjectsLast").
+		Where("cid = ?", cid).
+		First(&oracleFile).Error; err != nil {
 		return nil, fmt.Errorf(
 			"failed to find oracle file with CID %s: %w",
 			cid,
@@ -415,7 +431,10 @@ func (d *Database) GetTrieByOracleFileID(
 	oracleFileID int64,
 ) (*Trie, error) {
 	var trie Trie
-	if err := d.db.WithContext(ctx).Where("oracle_file_id = ?", oracleFileID).First(&trie).Error; err != nil {
+	if err := d.db.WithContext(ctx).
+		Preload("Operations").
+		Where("oracle_file_id = ?", oracleFileID).
+		First(&trie).Error; err != nil {
 		return nil, fmt.Errorf(
 			"failed to find trie for oracle file ID %d: %w",
 			oracleFileID,
@@ -423,4 +442,20 @@ func (d *Database) GetTrieByOracleFileID(
 		)
 	}
 	return &trie, nil
+}
+
+func (d *Database) GetObjectByID(
+	ctx context.Context,
+	id string,
+) (*Object, error) {
+	var obj Object
+	if err := d.db.WithContext(ctx).
+		Preload("Keys", "deleted_at IS NULL AND NOT is_deleted").
+		First(&obj, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find object with ID %s: %w", id, err)
+	}
+	return &obj, nil
 }

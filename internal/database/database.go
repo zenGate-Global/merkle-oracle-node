@@ -21,7 +21,8 @@ func New(cfg *config.Config) (*Database, error) {
 	db, err := gorm.Open(
 		postgres.Open(cfg.Storage.URL),
 		&gorm.Config{
-			Logger: gormlogger.Discard,
+			DisableForeignKeyConstraintWhenMigrating: true,
+			Logger:                                   gormlogger.Discard,
 		},
 	)
 	if err != nil {

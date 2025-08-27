@@ -12,6 +12,7 @@ END$$;
 `
 
 const sqlIndexes = `
+CREATE UNIQUE INDEX IF NOT EXISTS uix_oracle_file_cid ON oracle_file (cid);
 CREATE INDEX IF NOT EXISTS oracle_file_prev_idx ON oracle_file (previous_cid);
 CREATE INDEX IF NOT EXISTS trie_confirmed_idx  ON trie (blockchain_confirmed_at);
 CREATE INDEX IF NOT EXISTS trie_slot_idx       ON trie (slot);
