@@ -21,7 +21,9 @@ debug:
 server:
   listenAddress: "0.0.0.0"
   listenPort: 8080
-  enableDebug: true
+  enableDebug: false
+  defaultPageLimit: 50
+  maxPageLimit: 1000
 
 submit:
   url: "https://cardano-preview.blockfrost.io/api/v0/tx/submit"

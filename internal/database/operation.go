@@ -460,6 +460,48 @@ func (d *Database) GetObjectByID(
 	return &obj, nil
 }
 
+type GetAllObjectIDsResult struct {
+	ObjectIDs []string `json:"objectIds"`
+	Total     int64    `json:"total"`
+	Limit     int      `json:"limit"`
+	Offset    int      `json:"offset"`
+	HasMore   bool     `json:"hasMore"`
+}
+
+// GetAllObjectIDs returns a paginated list of all tracked object IDs
+func (d *Database) GetAllObjectIDs(
+	ctx context.Context,
+	limit, offset int,
+) (*GetAllObjectIDsResult, error) {
+	var objectIDs []string
+	var total int64
+
+	// Get total count
+	if err := d.db.WithContext(ctx).
+		Model(&Object{}).
+		Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("failed to count objects: %w", err)
+	}
+
+	// Get paginated object IDs
+	if err := d.db.WithContext(ctx).
+		Model(&Object{}).
+		Select("id").
+		Order("id ASC").
+		Limit(limit).
+		Offset(offset).
+		Pluck("id", &objectIDs).Error; err != nil {
+		return nil, fmt.Errorf("failed to get object IDs: %w", err)
+	}
+
+	return &GetAllObjectIDsResult{
+		ObjectIDs: objectIDs,
+		Total:     total,
+		Limit:     limit,
+		Offset:    offset,
+	}, nil
+}
+
 // GetObjectCurrentValues returns the current key-value pairs for an object as a flat map
 func (d *Database) GetObjectCurrentValues(
 	ctx context.Context,
@@ -477,7 +519,11 @@ func (d *Database) GetObjectCurrentValues(
 		Joins(`JOIN value ON value.value_hash = key.current_value_hash`).
 		Where(`key.object_id = ? AND key.deleted_at IS NULL AND NOT key.is_deleted`, id).
 		Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("failed to get current values for object %s: %w", id, err)
+		return nil, fmt.Errorf(
+			"failed to get current values for object %s: %w",
+			id,
+			err,
+		)
 	}
 
 	out := make(map[string]any, len(rows))
@@ -486,7 +532,11 @@ func (d *Database) GetObjectCurrentValues(
 		dec := json.NewDecoder(bytes.NewReader(r.Raw))
 		dec.UseNumber()
 		if err := dec.Decode(&v); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", r.RawKey, err)
+			return nil, fmt.Errorf(
+				"failed to unmarshal value for key %s: %w",
+				r.RawKey,
+				err,
+			)
 		}
 		out[r.RawKey] = v
 	}
@@ -548,7 +598,11 @@ func (d *Database) GetObjectValuesAtTimestamp(
 		dec := json.NewDecoder(bytes.NewReader(r.Raw))
 		dec.UseNumber()
 		if err := dec.Decode(&v); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", r.RawKey, err)
+			return nil, fmt.Errorf(
+				"failed to unmarshal value for key %s: %w",
+				r.RawKey,
+				err,
+			)
 		}
 		out[r.RawKey] = v
 	}

@@ -29,9 +29,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	ListenAddress string `yaml:"listenAddress"`
-	ListenPort    int    `yaml:"listenPort"`
-	EnableDebug   bool   `yaml:"enableDebug"`
+	ListenAddress    string `yaml:"listenAddress"`
+	ListenPort       int    `yaml:"listenPort"`
+	EnableDebug      bool   `yaml:"enableDebug"`
+	DefaultPageLimit int    `yaml:"defaultPageLimit" envconfig:"SERVER_DEFAULT_PAGE_LIMIT"`
+	MaxPageLimit     int    `yaml:"maxPageLimit"     envconfig:"SERVER_MAX_PAGE_LIMIT"`
 }
 
 type IndexerConfig struct {
@@ -172,6 +174,13 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.ListenPort == 0 {
 		c.Server.ListenPort = 8080
+	}
+
+	if c.Server.DefaultPageLimit == 0 {
+		c.Server.DefaultPageLimit = 50
+	}
+	if c.Server.MaxPageLimit == 0 {
+		c.Server.MaxPageLimit = 1000
 	}
 
 	// Network defaults
