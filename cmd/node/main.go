@@ -173,12 +173,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	//TODO: make this auto select a provider based on config
-	cloudStorage, err := cloud.NewGCSBucket(
-		context.Background(),
-		cfg.Cloud.BucketName,
-		cfg.Cloud.GCPCredentialJSONPath,
-	)
+	cloudStorage, err := cloud.NewCloudProvider(context.Background(), cfg.Cloud)
 	if err != nil {
 		logger.Errorf("failed to create cloud storage: %v", err)
 		os.Exit(1)
