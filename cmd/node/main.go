@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"zenGate-Global/merkle-oracle-node/internal/actors"
+	"zenGate-Global/merkle-oracle-node/internal/api"
 	"zenGate-Global/merkle-oracle-node/internal/cloud"
 	"zenGate-Global/merkle-oracle-node/internal/config"
 	"zenGate-Global/merkle-oracle-node/internal/database"
@@ -165,6 +166,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start API server
+	apiServer, err := api.Start(cfg, db)
+	if err != nil {
+		logger.Errorf("failed to start API server: %v", err)
+		os.Exit(1)
+	}
+
 	//TODO: make this auto select a provider based on config
 	cloudStorage, err := cloud.NewGCSBucket(
 		context.Background(),
@@ -244,6 +252,15 @@ func main() {
 		10*time.Second,
 	)
 	defer shutdownCancel()
+
+	// Shutdown API server
+	go func() {
+		if err := apiServer.Shutdown(shutdownCtx); err != nil {
+			logger.Warnw("API server shutdown failed", "error", err)
+		} else {
+			logger.Info("API server shutdown complete")
+		}
+	}()
 
 	// Shutdown actors with timeout
 	done := make(chan struct{})

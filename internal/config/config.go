@@ -22,9 +22,16 @@ type Config struct {
 	Logging      Logging        `yaml:"logging"`
 	Debug        DebugConfig    `yaml:"debug"`
 	Metrics      MetricsConfig  `yaml:"metrics"`
+	Server       ServerConfig   `yaml:"server"`
 	Profile      string         `yaml:"profile"  envconfig:"PROFILE"`
 	Network      string         `yaml:"network"  envconfig:"NETWORK"`
 	NetworkMagic uint32
+}
+
+type ServerConfig struct {
+	ListenAddress string `yaml:"listenAddress"`
+	ListenPort    int    `yaml:"listenPort"`
+	EnableDebug   bool   `yaml:"enableDebug"`
 }
 
 type IndexerConfig struct {
@@ -158,6 +165,14 @@ func (c *Config) setDefaults() {
 		c.Metrics.ListenAddress = "localhost"
 	}
 	// Metrics port defaults to 0 (disabled) unless explicitly set
+
+	// Server defaults
+	if c.Server.ListenAddress == "" {
+		c.Server.ListenAddress = "localhost"
+	}
+	if c.Server.ListenPort == 0 {
+		c.Server.ListenPort = 8080
+	}
 
 	// Network defaults
 	if c.Network == "" {

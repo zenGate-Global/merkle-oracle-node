@@ -18,6 +18,11 @@ debug:
   listenAddress: "0.0.0.0"
   listenPort: 9093
 
+server:
+  listenAddress: "0.0.0.0"
+  listenPort: 8080
+  enableDebug: true
+
 submit:
   url: "https://cardano-preview.blockfrost.io/api/v0/tx/submit"
   blockFrostProjectID: ""

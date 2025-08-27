@@ -1,0 +1,80 @@
+basePath: /
+host: localhost:8080
+info:
+  contact: {}
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Merkle Oracle Node API
+  version: 1.0.0
+paths:
+  /healthcheck:
+    get:
+      description: Returns 200 if the service is alive.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      summary: Health Check
+      tags:
+      - system
+  /objects/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves an object by its ID from the database with key-value
+        pairs. Optionally specify a timestamp to get historical state.
+      parameters:
+      - description: Object ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: RFC3339 timestamp to get object state at specific time (e.g.
+          2024-01-15T10:30:00Z). If not provided, returns current state.
+        in: query
+        name: timestamp
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Object data with timestamp
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid ID format or timestamp
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Object not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Object by ID
+      tags:
+      - objects
+schemes:
+- http
+- https
+swagger: "2.0"
+tags:
+- description: Object Queries
+  name: objects
+- description: System status and health monitoring endpoints
+  name: system

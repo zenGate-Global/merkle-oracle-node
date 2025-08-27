@@ -459,3 +459,98 @@ func (d *Database) GetObjectByID(
 	}
 	return &obj, nil
 }
+
+// GetObjectCurrentValues returns the current key-value pairs for an object as a flat map
+func (d *Database) GetObjectCurrentValues(
+	ctx context.Context,
+	id string,
+) (map[string]any, error) {
+	type row struct {
+		RawKey string         `gorm:"column:raw_key"`
+		Raw    datatypes.JSON `gorm:"column:raw"`
+	}
+
+	var rows []row
+	if err := d.db.WithContext(ctx).
+		Table(`key`).
+		Select(`key.raw_key, value.raw`).
+		Joins(`JOIN value ON value.value_hash = key.current_value_hash`).
+		Where(`key.object_id = ? AND key.deleted_at IS NULL AND NOT key.is_deleted`, id).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to get current values for object %s: %w", id, err)
+	}
+
+	out := make(map[string]any, len(rows))
+	for _, r := range rows {
+		var v any
+		dec := json.NewDecoder(bytes.NewReader(r.Raw))
+		dec.UseNumber()
+		if err := dec.Decode(&v); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", r.RawKey, err)
+		}
+		out[r.RawKey] = v
+	}
+	return out, nil
+}
+
+// GetObjectValuesAtTimestamp returns the key-value pairs for an object as they existed at a specific timestamp.
+func (d *Database) GetObjectValuesAtTimestamp(
+	ctx context.Context,
+	id string,
+	timestamp time.Time,
+) (map[string]any, error) {
+	type row struct {
+		RawKey string         `gorm:"column:raw_key"`
+		Raw    datatypes.JSON `gorm:"column:raw"`
+	}
+
+	var rows []row
+	const rawQuery = `
+			WITH last_ops AS (
+			SELECT DISTINCT ON (tok.key_hash)
+					tok.key_hash,
+					tok.value_hash,
+					o.operation_type,
+					k.raw_key
+			FROM trie_operation_key tok
+			JOIN trie_operation o ON o.id = tok.trie_operation_id
+			JOIN trie t           ON t.id = o.trie_id
+			JOIN key  k           ON k.key_hash = tok.key_hash
+			WHERE k.object_id = ?
+				AND COALESCE(t.blockchain_confirmed_at, t.created_at) <= ?
+			ORDER BY
+				tok.key_hash,
+				COALESCE(t.blockchain_confirmed_at, t.created_at) DESC,
+				t.slot DESC,
+				CASE o.operation_type
+				WHEN 'insert' THEN 1
+				WHEN 'update' THEN 2
+				WHEN 'delete' THEN 3
+				END DESC,
+				o.sequence_order DESC,
+				o.id DESC
+			)
+			SELECT lo.raw_key, v.raw
+			FROM last_ops lo
+			JOIN value v ON v.value_hash = lo.value_hash
+			WHERE lo.operation_type <> 'delete' AND lo.value_hash IS NOT NULL;
+	`
+	if err := d.db.WithContext(ctx).Raw(rawQuery, id, timestamp).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to get values for object %s at timestamp %s: %w",
+			id, timestamp.Format(time.RFC3339), err,
+		)
+	}
+
+	out := make(map[string]any, len(rows))
+	for _, r := range rows {
+		var v any
+		dec := json.NewDecoder(bytes.NewReader(r.Raw))
+		dec.UseNumber()
+		if err := dec.Decode(&v); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", r.RawKey, err)
+		}
+		out[r.RawKey] = v
+	}
+	return out, nil
+}
