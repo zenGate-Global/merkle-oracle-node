@@ -1,4 +1,37 @@
 basePath: /
+definitions:
+  database.CostStatistics:
+    properties:
+      averageFee:
+        type: number
+      earliestSlot:
+        type: integer
+      latestSlot:
+        type: integer
+      maxFee:
+        type: integer
+      minFee:
+        type: integer
+      totalFees:
+        type: integer
+      totalTransactions:
+        type: integer
+    type: object
+  database.GetAllObjectIDsResult:
+    properties:
+      hasMore:
+        type: boolean
+      limit:
+        type: integer
+      objectIds:
+        items:
+          type: string
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -23,6 +56,42 @@ paths:
       summary: Health Check
       tags:
       - system
+  /objects:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a paginated list of all tracked object IDs from the database.
+      parameters:
+      - description: 'Number of items per page (default: 20, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Number of items to skip (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated list of object IDs
+          schema:
+            $ref: '#/definitions/database.GetAllObjectIDsResult'
+        "400":
+          description: Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get All Object IDs
+      tags:
+      - objects
   /objects/{id}:
     get:
       consumes:
@@ -69,6 +138,28 @@ paths:
       summary: Get Object by ID
       tags:
       - objects
+  /statistics/costs:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves transaction fee statistics including total fees, averages,
+        min/max values, and slot information.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cost statistics
+          schema:
+            $ref: '#/definitions/database.CostStatistics'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Cost Statistics
+      tags:
+      - statistics
 schemes:
 - http
 - https
@@ -78,3 +169,5 @@ tags:
   name: objects
 - description: System status and health monitoring endpoints
   name: system
+- description: Statistics and analytics endpoints
+  name: statistics

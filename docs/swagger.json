@@ -39,6 +39,61 @@
                 }
             }
         },
+        "/objects": {
+            "get": {
+                "description": "Retrieves a paginated list of all tracked object IDs from the database.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "objects"
+                ],
+                "summary": "Get All Object IDs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page (default: 20, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of object IDs",
+                        "schema": {
+                            "$ref": "#/definitions/database.GetAllObjectIDsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/objects/{id}": {
             "get": {
                 "description": "Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp to get historical state.",
@@ -104,6 +159,89 @@
                     }
                 }
             }
+        },
+        "/statistics/costs": {
+            "get": {
+                "description": "Retrieves transaction fee statistics including total fees, averages, min/max values, and slot information.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "Get Cost Statistics",
+                "responses": {
+                    "200": {
+                        "description": "Cost statistics",
+                        "schema": {
+                            "$ref": "#/definitions/database.CostStatistics"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "database.CostStatistics": {
+            "type": "object",
+            "properties": {
+                "averageFee": {
+                    "type": "number"
+                },
+                "earliestSlot": {
+                    "type": "integer"
+                },
+                "latestSlot": {
+                    "type": "integer"
+                },
+                "maxFee": {
+                    "type": "integer"
+                },
+                "minFee": {
+                    "type": "integer"
+                },
+                "totalFees": {
+                    "type": "integer"
+                },
+                "totalTransactions": {
+                    "type": "integer"
+                }
+            }
+        },
+        "database.GetAllObjectIDsResult": {
+            "type": "object",
+            "properties": {
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "objectIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
         }
     },
     "tags": [
@@ -114,6 +252,10 @@
         {
             "description": "System status and health monitoring endpoints",
             "name": "system"
+        },
+        {
+            "description": "Statistics and analytics endpoints",
+            "name": "statistics"
         }
     ]
 }
