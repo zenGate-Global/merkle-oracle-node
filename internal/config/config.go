@@ -73,6 +73,8 @@ type ApiConfig struct {
 type CloudConfig struct {
 	GCPCredentialJSONPath string `yaml:"gcpCredentialJSONPath" envconfig:"GCP_CREDENTIAL_JSON_PATH"`
 	BucketName            string `yaml:"bucketName"            envconfig:"BUCKET_NAME"`
+	PinataGatewayURL      string `yaml:"pinataGatewayURL"      envconfig:"PINATA_GATEWAY_URL"`
+	PinataJWT             string `yaml:"pinataJWT"             envconfig:"PINATA_JWT"`
 }
 
 type Logging struct {

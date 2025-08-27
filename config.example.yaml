@@ -54,6 +54,9 @@ api:
 cloud:
   gcpCredentialJSONPath: "./gcp.json"
   bucketName: "oracle-bucket-dev"
+  pinataGatewayURL: "https://gateway.pinata.cloud"
+  pinataJWT: ""
+
 
 oracle:
   updateInterval: 2m

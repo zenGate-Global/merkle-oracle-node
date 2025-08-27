@@ -394,6 +394,8 @@ github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd h1:oYs02El
 github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd/go.mod h1:DEEos8tyVwA6CgJPedo8alDlI1QVZ+ovYRg+WyAaSVc=
 github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20250811042717-4d037378a6df h1:6toWLdAFUiLnYRkz6GviCu5Kmq+V1+uyp4wycaQdmGk=
 github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20250811042717-4d037378a6df/go.mod h1:QyFJ9GId/KNkF9SSFvpluc+OkFKJP8vXJVRA+7NzLf8=
+github.com/zenGate-Global/pinata-go-sdk v0.0.0-20240826130715-09fba9a6bf2e h1:vCBn7T1Y4bg4nFJMvbHfi3RXOQOOewahOEvo5lQFii0=
+github.com/zenGate-Global/pinata-go-sdk v0.0.0-20240826130715-09fba9a6bf2e/go.mod h1:DIWC7UQnfCXidPdndFJIBDe2512SpJUAJpPDP9+wkpU=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/contrib/detectors/gcp v1.36.0 h1:F7q2tNlCaHY9nMKHR6XH9/qkp8FktLnIcy6jJNyOCQw=

@@ -29,6 +29,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.0
 	github.com/swaggo/swag v1.16.6
+	github.com/zde37/pinata-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20250811042717-4d037378a6df
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
@@ -176,5 +177,7 @@ require (
 )
 
 replace github.com/Salvionied/apollo => github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd
+
+replace github.com/zde37/pinata-go-sdk => github.com/zenGate-Global/pinata-go-sdk v0.0.0-20240826130715-09fba9a6bf2e
 
 replace github.com/maestro-org/go-sdk => github.com/mgpai22/maestro-cardano-go-sdk v0.0.0-20250808070843-b2b1302fb8b4
