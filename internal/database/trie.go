@@ -134,7 +134,9 @@ func (d *Database) ValueHashHex(value interface{}) (string, error) {
 	return hex.EncodeToString(hashBytes), nil
 }
 
-var jsonNumberRE = regexp.MustCompile(`^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$`)
+var jsonNumberRE = regexp.MustCompile(
+	`^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$`,
+)
 
 // CanonicalizeJSON normalizes JSON primitives to a stable byte representation.
 // numbers become fraction *strings* ("num/den"), integers become "n/1",

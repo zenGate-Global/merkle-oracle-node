@@ -485,13 +485,19 @@ func handleGetValueByKeyHash(c *gin.Context) {
 	// Decode hex string to bytes
 	keyHash, err := hex.DecodeString(keyHashHex)
 	if err != nil {
-		BadRequest(c, fmt.Errorf("invalid key hash format: must be hex encoded"))
+		BadRequest(
+			c,
+			fmt.Errorf("invalid key hash format: must be hex encoded"),
+		)
 		return
 	}
 
 	result, err := db.GetValueHashByKeyHash(c.Request.Context(), keyHash)
 	if err != nil {
-		ServerError(c, fmt.Errorf("failed to get value hash by key hash: %w", err))
+		ServerError(
+			c,
+			fmt.Errorf("failed to get value hash by key hash: %w", err),
+		)
 		return
 	}
 

@@ -32,14 +32,22 @@ func TestCanonicalizeJSON_Primitives(t *testing.T) {
 		{name: "StringNumericWithPlus", in: "\"+2.0\"", want: "\"2/1\""},
 
 		// Very large integer string (beyond 64-bit), should work via big.Int
-		{name: "StringNumericVeryLarge", in: "\"123456789012345678901234567890\"", want: "\"123456789012345678901234567890/1\""},
+		{
+			name: "StringNumericVeryLarge",
+			in:   "\"123456789012345678901234567890\"",
+			want: "\"123456789012345678901234567890/1\"",
+		},
 
 		// should stay a string
 		{name: "StringLeadingZeros", in: "\"0012\"", want: "\"0012\""},
 
 		// non-numeric strings remain unchanged
 		{name: "StringRegular", in: "\"I like 2\"", want: "\"I like 2\""},
-		{name: "StringWithEscapes", in: "\"line\\nbreak\"", want: "\"line\\nbreak\""},
+		{
+			name: "StringWithEscapes",
+			in:   "\"line\\nbreak\"",
+			want: "\"line\\nbreak\"",
+		},
 
 		// booleans / null
 		{name: "BoolTrue", in: "true", want: "true"},
@@ -58,7 +66,10 @@ func TestCanonicalizeJSON_Primitives(t *testing.T) {
 			gotBytes, err := CanonicalizeJSON([]byte(tc.in))
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("expected error, got nil (output=%q)", string(gotBytes))
+					t.Fatalf(
+						"expected error, got nil (output=%q)",
+						string(gotBytes),
+					)
 				}
 				return
 			}
@@ -67,7 +78,12 @@ func TestCanonicalizeJSON_Primitives(t *testing.T) {
 			}
 			got := string(gotBytes)
 			if got != tc.want {
-				t.Fatalf("canonical mismatch\nin:   %s\nwant: %s\ngot:  %s", tc.in, tc.want, got)
+				t.Fatalf(
+					"canonical mismatch\nin:   %s\nwant: %s\ngot:  %s",
+					tc.in,
+					tc.want,
+					got,
+				)
 			}
 		})
 	}
@@ -82,10 +98,18 @@ func TestCanonicalizeJSON_Reduction(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "StringTrailingZeros", in: "\"12.3400\"", want: "\"617/50\""}, // 1234/100 -> 617/50
+		{
+			name: "StringTrailingZeros",
+			in:   "\"12.3400\"",
+			want: "\"617/50\"",
+		}, // 1234/100 -> 617/50
 		{name: "StringHalf", in: "\"0.5\"", want: "\"1/2\""},
 		{name: "StringNegHalf", in: "\"-0.5\"", want: "\"-1/2\""},
-		{name: "NumberThird", in: "0.333333333", want: "\"333333333/1000000000\""}, // exact decimal given
+		{
+			name: "NumberThird",
+			in:   "0.333333333",
+			want: "\"333333333/1000000000\"",
+		}, // exact decimal given
 	}
 
 	for _, tc := range cases {
@@ -97,7 +121,12 @@ func TestCanonicalizeJSON_Reduction(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if string(got) != tc.want {
-				t.Fatalf("reduction mismatch\nin:   %s\nwant: %s\ngot:  %s", tc.in, tc.want, string(got))
+				t.Fatalf(
+					"reduction mismatch\nin:   %s\nwant: %s\ngot:  %s",
+					tc.in,
+					tc.want,
+					string(got),
+				)
 			}
 		})
 	}

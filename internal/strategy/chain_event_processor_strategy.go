@@ -1312,10 +1312,16 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 				// Canonicalize raw value to JSON for consistency
 				marshaled, err := json.Marshal(v)
 				if err != nil {
-					s.logger.Warnf("failed to marshal value for key %s: %v", k, err)
+					s.logger.Warnf(
+						"failed to marshal value for key %s: %v",
+						k,
+						err,
+					)
 					continue
 				}
-				valBytes, err := database.CanonicalizeJSON(json.RawMessage(marshaled))
+				valBytes, err := database.CanonicalizeJSON(
+					json.RawMessage(marshaled),
+				)
 				if err != nil {
 					s.logger.Warnf(
 						"failed to marshal value for key %s: %v",
