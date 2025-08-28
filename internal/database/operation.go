@@ -901,3 +901,140 @@ func (d *Database) GetDeletedObjectIDs(
 		Offset:    offset,
 	}, nil
 }
+
+type ValueWithTimestamp struct {
+	Value     interface{} `json:"value"`
+	KeyHash   []byte      `json:"keyHash"`
+	Timestamp time.Time   `json:"timestamp"`
+	Slot      int64       `json:"slot"`
+}
+
+type ValueHashWithTimestamp struct {
+	ValueHash []byte    `json:"valueHash"`
+	Timestamp time.Time `json:"timestamp"`
+	Slot      int64     `json:"slot"`
+}
+
+// GetValueByKey returns the current value for a specific object ID and raw key,
+// along with the timestamp and slot of the latest operation affecting this key.
+func (d *Database) GetValueByKey(
+	ctx context.Context,
+	objectID, rawKey string,
+) (*ValueWithTimestamp, error) {
+	type row struct {
+		Raw           datatypes.JSON `gorm:"column:raw"`
+		DataTimestamp time.Time      `gorm:"column:data_timestamp"`
+		DataSlot      int64          `gorm:"column:data_slot"`
+	}
+
+	var result row
+	const query = `
+		WITH latest_data AS (
+			SELECT 
+				COALESCE(t.blockchain_confirmed_at, t.created_at) AS data_timestamp,
+				t.slot AS data_slot
+			FROM trie t
+			JOIN trie_operation o ON o.trie_id = t.id
+			JOIN trie_operation_key tok ON tok.trie_operation_id = o.id
+			JOIN key k2 ON k2.key_hash = tok.key_hash
+			WHERE k2.object_id = ? AND k2.raw_key = ?
+			ORDER BY COALESCE(t.blockchain_confirmed_at, t.created_at) DESC, t.slot DESC, t.id DESC
+			LIMIT 1
+		)
+		SELECT 
+			value.raw,
+			COALESCE(ld.data_timestamp, statement_timestamp()) AS data_timestamp,
+			COALESCE(ld.data_slot, 0) AS data_slot
+		FROM key
+		JOIN value ON value.value_hash = key.current_value_hash
+		LEFT JOIN latest_data ld ON true
+		WHERE key.object_id = ? 
+		  AND key.raw_key = ?
+		  AND key.deleted_at IS NULL 
+		  AND NOT key.is_deleted
+	`
+
+	if err := d.db.WithContext(ctx).Raw(query, objectID, rawKey, objectID, rawKey).Scan(&result).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to get value for object %s key %s: %w",
+			objectID, rawKey, err,
+		)
+	}
+
+	if len(result.Raw) == 0 {
+		return nil, nil
+	}
+
+	var v interface{}
+	dec := json.NewDecoder(bytes.NewReader(result.Raw))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return nil, fmt.Errorf(
+			"failed to unmarshal value for key %s: %w",
+			rawKey, err,
+		)
+	}
+
+	kh := d.KeyHash(objectID, rawKey)
+
+	return &ValueWithTimestamp{
+		Value:     v,
+		KeyHash:   kh,
+		Timestamp: result.DataTimestamp.UTC(),
+		Slot:      result.DataSlot,
+	}, nil
+}
+
+// GetValueHashByKeyHash returns the current value hash for a specific key hash,
+// along with the timestamp and slot of the latest operation affecting this key.
+func (d *Database) GetValueHashByKeyHash(
+	ctx context.Context,
+	keyHash []byte,
+) (*ValueHashWithTimestamp, error) {
+	type row struct {
+		ValueHash     []byte    `gorm:"column:current_value_hash"`
+		DataTimestamp time.Time `gorm:"column:data_timestamp"`
+		DataSlot      int64     `gorm:"column:data_slot"`
+	}
+
+	var result row
+	const query = `
+		WITH latest_data AS (
+			SELECT 
+				COALESCE(t.blockchain_confirmed_at, t.created_at) AS data_timestamp,
+				t.slot AS data_slot
+			FROM trie t
+			JOIN trie_operation o ON o.trie_id = t.id
+			JOIN trie_operation_key tok ON tok.trie_operation_id = o.id
+			WHERE tok.key_hash = ?
+			ORDER BY COALESCE(t.blockchain_confirmed_at, t.created_at) DESC, t.slot DESC, t.id DESC
+			LIMIT 1
+		)
+		SELECT 
+			key.current_value_hash,
+			COALESCE(ld.data_timestamp, statement_timestamp()) AS data_timestamp,
+			COALESCE(ld.data_slot, 0) AS data_slot
+		FROM key
+		LEFT JOIN latest_data ld ON true
+		WHERE key.key_hash = ?
+		  AND key.deleted_at IS NULL 
+		  AND NOT key.is_deleted
+	`
+
+	if err := d.db.WithContext(ctx).Raw(query, keyHash, keyHash).Scan(&result).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to get value hash for key hash %x: %w",
+			keyHash, err,
+		)
+	}
+
+	if len(result.ValueHash) == 0 {
+		return nil, nil
+	}
+
+	return &ValueHashWithTimestamp{
+		ValueHash: result.ValueHash,
+		Timestamp: result.DataTimestamp.UTC(),
+		Slot:      result.DataSlot,
+	}, nil
+}

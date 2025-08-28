@@ -30,6 +30,17 @@ definitions:
       total:
         type: integer
     type: object
+  database.ValueHashWithTimestamp:
+    properties:
+      slot:
+        type: integer
+      timestamp:
+        type: string
+      valueHash:
+        items:
+          type: integer
+        type: array
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -54,6 +65,46 @@ paths:
       summary: Health Check
       tags:
       - system
+  /keys/{keyHash}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves the current value hash for a specific key hash, along
+        with timestamp and slot information.
+      parameters:
+      - description: Key hash (hex encoded)
+        in: path
+        name: keyHash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Value hash with timestamp and slot
+          schema:
+            $ref: '#/definitions/database.ValueHashWithTimestamp'
+        "400":
+          description: Invalid key hash format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Key not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Value Hash by Key Hash
+      tags:
+      - objects
   /objects:
     get:
       consumes:
@@ -95,7 +146,7 @@ paths:
       consumes:
       - application/json
       description: Retrieves an object by its ID from the database with key-value
-        pairs. Optionally specify a timestamp to get historical state.
+        pairs. Optionally specify a timestamp or slot to get historical state.
       parameters:
       - description: Object ID
         in: path
@@ -103,20 +154,25 @@ paths:
         required: true
         type: string
       - description: RFC3339 timestamp to get object state at specific time (e.g.
-          2024-01-15T10:30:00Z). If not provided, returns current state.
+          2024-01-15T10:30:00Z). Cannot be used with slot parameter.
         in: query
         name: timestamp
         type: string
+      - description: Slot number to get object state at specific slot. Cannot be used
+          with timestamp parameter.
+        in: query
+        name: slot
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Object data with timestamp
+          description: Object data with timestamp and slot
           schema:
             additionalProperties: true
             type: object
         "400":
-          description: Invalid ID format or timestamp
+          description: Invalid ID format, timestamp, slot, or conflicting parameters
           schema:
             additionalProperties:
               type: string
@@ -134,6 +190,46 @@ paths:
               type: string
             type: object
       summary: Get Object by ID
+      tags:
+      - objects
+  /objects/{id}/keys/{key}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves the current value for a specific object ID and key name,
+        along with keyHash, timestamp and slot information.
+      parameters:
+      - description: Object ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Key name
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Value with keyHash (hex), timestamp and slot
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Key not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Value by Key
       tags:
       - objects
   /objects/active:

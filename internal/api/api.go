@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -97,6 +98,10 @@ func Start(
 	router.GET("/objects/:id", handleGetObjectByID)
 	router.GET("/objects/active", handleGetActiveObjectIDs)
 	router.GET("/objects/deleted", handleGetDeletedObjectIDs)
+	router.GET("/objects/:id/keys/:key", handleGetValueByKey)
+
+	// Key endpoints
+	router.GET("/keys/:keyHash", handleGetValueByKeyHash)
 
 	// Statistics endpoints
 	router.GET("/statistics/costs", handleGetCostStatistics)
@@ -420,6 +425,89 @@ func handleGetDeletedObjectIDs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// handleGetValueByKey godoc
+// @Summary      Get Value by Key
+// @Description  Retrieves the current value for a specific object ID and key name, along with keyHash, timestamp and slot information.
+// @Tags         objects
+// @Accept       json
+// @Produce      json
+// @Param        id          path      string  true   "Object ID"
+// @Param        key         path      string  true   "Key name"
+// @Success      200  {object}  map[string]interface{} "Value with keyHash (hex), timestamp and slot"
+// @Failure      404  {object}  map[string]string "Key not found"
+// @Failure      500  {object}  map[string]string "Internal server error"
+// @Router       /objects/{id}/keys/{key} [get]
+func handleGetValueByKey(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+	objectID := c.Param("id")
+	key := c.Param("key")
+
+	result, err := db.GetValueByKey(c.Request.Context(), objectID, key)
+	if err != nil {
+		ServerError(c, fmt.Errorf("failed to get value by key: %w", err))
+		return
+	}
+
+	if result == nil {
+		NotFound(c, "key not found")
+		return
+	}
+
+	// Convert keyHash to hex for JSON response
+	response := map[string]interface{}{
+		"value":     result.Value,
+		"keyHash":   hex.EncodeToString(result.KeyHash),
+		"timestamp": result.Timestamp.Format(time.RFC3339Nano),
+		"slot":      result.Slot,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// handleGetValueByKeyHash godoc
+// @Summary      Get Value Hash by Key Hash
+// @Description  Retrieves the current value hash for a specific key hash, along with timestamp and slot information.
+// @Tags         objects
+// @Accept       json
+// @Produce      json
+// @Param        keyHash     path      string  true   "Key hash (hex encoded)"
+// @Success      200  {object}  database.ValueHashWithTimestamp "Value hash with timestamp and slot"
+// @Failure      400  {object}  map[string]string "Invalid key hash format"
+// @Failure      404  {object}  map[string]string "Key not found"
+// @Failure      500  {object}  map[string]string "Internal server error"
+// @Router       /keys/{keyHash} [get]
+func handleGetValueByKeyHash(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+	keyHashHex := c.Param("keyHash")
+
+	// Decode hex string to bytes
+	keyHash, err := hex.DecodeString(keyHashHex)
+	if err != nil {
+		BadRequest(c, fmt.Errorf("invalid key hash format: must be hex encoded"))
+		return
+	}
+
+	result, err := db.GetValueHashByKeyHash(c.Request.Context(), keyHash)
+	if err != nil {
+		ServerError(c, fmt.Errorf("failed to get value hash by key hash: %w", err))
+		return
+	}
+
+	if result == nil {
+		NotFound(c, "key not found")
+		return
+	}
+
+	// Convert value hash to hex for JSON response
+	response := map[string]interface{}{
+		"valueHash": hex.EncodeToString(result.ValueHash),
+		"timestamp": result.Timestamp.Format(time.RFC3339Nano),
+		"slot":      result.Slot,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // parsePageParams extracts and validates limit and offset parameters

@@ -39,6 +39,65 @@
                 }
             }
         },
+        "/keys/{keyHash}": {
+            "get": {
+                "description": "Retrieves the current value hash for a specific key hash, along with timestamp and slot information.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "objects"
+                ],
+                "summary": "Get Value Hash by Key Hash",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Key hash (hex encoded)",
+                        "name": "keyHash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Value hash with timestamp and slot",
+                        "schema": {
+                            "$ref": "#/definitions/database.ValueHashWithTimestamp"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid key hash format",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Key not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/objects": {
             "get": {
                 "description": "Retrieves a paginated list of all tracked object IDs from the database.",
@@ -206,7 +265,7 @@
         },
         "/objects/{id}": {
             "get": {
-                "description": "Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp to get historical state.",
+                "description": "Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp or slot to get historical state.",
                 "consumes": [
                     "application/json"
                 ],
@@ -227,21 +286,27 @@
                     },
                     {
                         "type": "string",
-                        "description": "RFC3339 timestamp to get object state at specific time (e.g. 2024-01-15T10:30:00Z). If not provided, returns current state.",
+                        "description": "RFC3339 timestamp to get object state at specific time (e.g. 2024-01-15T10:30:00Z). Cannot be used with slot parameter.",
                         "name": "timestamp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Slot number to get object state at specific slot. Cannot be used with timestamp parameter.",
+                        "name": "slot",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Object data with timestamp",
+                        "description": "Object data with timestamp and slot",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "Invalid ID format or timestamp",
+                        "description": "Invalid ID format, timestamp, slot, or conflicting parameters",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -251,6 +316,64 @@
                     },
                     "404": {
                         "description": "Object not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/objects/{id}/keys/{key}": {
+            "get": {
+                "description": "Retrieves the current value for a specific object ID and key name, along with keyHash, timestamp and slot information.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "objects"
+                ],
+                "summary": "Get Value by Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Object ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Key name",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Value with keyHash (hex), timestamp and slot",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Key not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -347,6 +470,23 @@
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "database.ValueHashWithTimestamp": {
+            "type": "object",
+            "properties": {
+                "slot": {
+                    "type": "integer"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "valueHash": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         }
