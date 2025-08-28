@@ -189,14 +189,15 @@ func handleHealthcheck(c *gin.Context) {
 
 // handleGetObjectByID godoc
 // @Summary      Get Object by ID
-// @Description  Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp to get historical state.
+// @Description  Retrieves an object by its ID from the database with key-value pairs. Optionally specify a timestamp or slot to get historical state.
 // @Tags         objects
 // @Accept       json
 // @Produce      json
 // @Param        id          path      string  true   "Object ID"
-// @Param        timestamp   query     string  false  "RFC3339 timestamp to get object state at specific time (e.g. 2024-01-15T10:30:00Z). If not provided, returns current state."
-// @Success      200  {object}  map[string]interface{} "Object data with timestamp"
-// @Failure      400  {object}  map[string]string "Invalid ID format or timestamp"
+// @Param        timestamp   query     string  false  "RFC3339 timestamp to get object state at specific time (e.g. 2024-01-15T10:30:00Z). Cannot be used with slot parameter."
+// @Param        slot        query     int     false  "Slot number to get object state at specific slot. Cannot be used with timestamp parameter."
+// @Success      200  {object}  map[string]interface{} "Object data with timestamp and slot"
+// @Failure      400  {object}  map[string]string "Invalid ID format, timestamp, slot, or conflicting parameters"
 // @Failure      404  {object}  map[string]string "Object not found"
 // @Failure      500  {object}  map[string]string "Internal server error"
 // @Router       /objects/{id} [get]
@@ -204,22 +205,52 @@ func handleGetObjectByID(c *gin.Context) {
 	db := c.MustGet("db").(*database.Database)
 	id := c.Param("id")
 
-	// Parse optional timestamp parameter
 	timestampParam := c.Query("timestamp")
+	slotParam := c.Query("slot")
+
+	if timestampParam != "" && slotParam != "" {
+		BadRequest(
+			c,
+			fmt.Errorf("cannot specify both timestamp and slot parameters"),
+		)
+		return
+	}
+
 	var targetTimestamp *time.Time
+	var targetSlot *int64
+
 	if timestampParam != "" {
-		parsed, err := time.Parse(time.RFC3339, timestampParam)
+		parsed, err := parseRFC3339Flexible(timestampParam)
 		if err != nil {
 			BadRequest(
 				c,
 				fmt.Errorf(
-					"invalid timestamp format, expected RFC3339 (e.g. 2024-01-15T10:30:00Z): %w",
+					"invalid timestamp format (RFC3339/RFC3339Nano): %w",
 					err,
 				),
 			)
 			return
 		}
 		targetTimestamp = &parsed
+	}
+
+	if slotParam != "" {
+		parsed, err := strconv.ParseInt(slotParam, 10, 64)
+		if err != nil {
+			BadRequest(
+				c,
+				fmt.Errorf("invalid slot parameter: must be a number"),
+			)
+			return
+		}
+		if parsed <= 0 {
+			BadRequest(
+				c,
+				fmt.Errorf("invalid slot parameter: must be greater than 0"),
+			)
+			return
+		}
+		targetSlot = &parsed
 	}
 
 	obj, err := db.GetObjectByID(c.Request.Context(), id)
@@ -233,35 +264,65 @@ func handleGetObjectByID(c *gin.Context) {
 		return
 	}
 
-	var objectValues map[string]any
+	var objectData interface{}
 	var responseTimestamp time.Time
+	var responseSlot int64
 
 	if targetTimestamp != nil {
-		objectValues, err = db.GetObjectValuesAtTimestamp(
+		result, err := db.GetObjectValuesAtTimestampWithSlot(
 			c.Request.Context(),
 			id,
 			*targetTimestamp,
 		)
-		responseTimestamp = *targetTimestamp
+		if err != nil {
+			ServerError(
+				c,
+				fmt.Errorf("failed to get object values at timestamp: %w", err),
+			)
+			return
+		}
+		responseTimestamp = result.Timestamp
+		responseSlot = result.Slot
+		if len(result.Values) == 0 {
+			objectData = nil
+		} else {
+			objectData = result.Values
+		}
+	} else if targetSlot != nil {
+		result, err := db.GetObjectValuesAtSlotWithTimestamp(
+			c.Request.Context(),
+			id,
+			*targetSlot,
+		)
+		if err != nil {
+			ServerError(c, fmt.Errorf("failed to get object values at slot: %w", err))
+			return
+		}
+		responseTimestamp = result.Timestamp
+		responseSlot = result.Slot
+		if len(result.Values) == 0 {
+			objectData = nil
+		} else {
+			objectData = result.Values
+		}
 	} else {
-		objectValues, err = db.GetObjectCurrentValues(c.Request.Context(), id)
-		responseTimestamp = time.Now().UTC()
-	}
-
-	if err != nil {
-		ServerError(c, fmt.Errorf("failed to get object values: %w", err))
-		return
-	}
-
-	var objectData interface{}
-	if len(objectValues) == 0 {
-		objectData = nil
-	} else {
-		objectData = objectValues
+		result, err := db.GetObjectCurrentValuesWithTimestamp(c.Request.Context(), id)
+		if err != nil {
+			ServerError(c, fmt.Errorf("failed to get current object values: %w", err))
+			return
+		}
+		responseTimestamp = result.Timestamp
+		responseSlot = result.Slot
+		if len(result.Values) == 0 {
+			objectData = nil
+		} else {
+			objectData = result.Values
+		}
 	}
 
 	response := map[string]interface{}{
 		"timestamp": responseTimestamp.Format(time.RFC3339Nano),
+		"slot":      responseSlot,
 		"object":    objectData,
 	}
 
@@ -443,4 +504,11 @@ func NotFound(c *gin.Context, message string) {
 
 func BadRequest(c *gin.Context, err error) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+}
+
+func parseRFC3339Flexible(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }

@@ -508,31 +508,174 @@ func (d *Database) GetAllObjectIDs(
 	}, nil
 }
 
-// GetObjectCurrentValues returns the current key-value pairs for an object as a flat map
-func (d *Database) GetObjectCurrentValues(
+// GetObjectCurrentValuesWithTimestamp returns the current key-value pairs for an object
+// along with the timestamp and slot of the latest data operation. The
+// returned timestamp/slot represent most recent blockchain operation affecting this object.
+func (d *Database) GetObjectCurrentValuesWithTimestamp(
 	ctx context.Context,
 	id string,
-) (map[string]any, error) {
+) (*ObjectValuesWithTimestamp, error) {
 	type row struct {
-		RawKey string         `gorm:"column:raw_key"`
-		Raw    datatypes.JSON `gorm:"column:raw"`
+		RawKey        string         `gorm:"column:raw_key"`
+		Raw           datatypes.JSON `gorm:"column:raw"`
+		DataTimestamp time.Time      `gorm:"column:data_timestamp"`
+		DataSlot      int64          `gorm:"column:data_slot"`
 	}
 
 	var rows []row
-	if err := d.db.WithContext(ctx).
-		Table(`key`).
-		Select(`key.raw_key, value.raw`).
-		Joins(`JOIN value ON value.value_hash = key.current_value_hash`).
-		Where(`key.object_id = ? AND key.deleted_at IS NULL AND NOT key.is_deleted`, id).
-		Scan(&rows).Error; err != nil {
+	const query = `
+		WITH latest_data AS (
+			SELECT 
+				COALESCE(t.blockchain_confirmed_at, t.created_at) AS data_timestamp,
+				t.slot AS data_slot
+			FROM trie t
+			JOIN trie_operation o ON o.trie_id = t.id
+			JOIN trie_operation_key tok ON tok.trie_operation_id = o.id
+			JOIN key k2 ON k2.key_hash = tok.key_hash
+			WHERE k2.object_id = ?
+			ORDER BY COALESCE(t.blockchain_confirmed_at, t.created_at) DESC, t.slot DESC, t.id DESC
+			LIMIT 1
+		)
+		SELECT 
+			key.raw_key, 
+			value.raw,
+			COALESCE(ld.data_timestamp, statement_timestamp()) AS data_timestamp,
+			COALESCE(ld.data_slot, 0) AS data_slot
+		FROM key
+		JOIN value ON value.value_hash = key.current_value_hash
+		LEFT JOIN latest_data ld ON true
+		WHERE key.object_id = ? 
+		  AND key.deleted_at IS NULL 
+		  AND NOT key.is_deleted
+	`
+
+	if err := d.db.WithContext(ctx).Raw(query, id, id).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf(
-			"failed to get current values for object %s: %w",
+			"failed to get current values with timestamp for object %s: %w",
 			id,
 			err,
 		)
 	}
 
+	// If no rows, we still want to return a timestamp and slot for consistency
+	if len(rows) == 0 {
+		type metaRow struct {
+			DataTimestamp time.Time `gorm:"column:data_timestamp"`
+			DataSlot      int64     `gorm:"column:data_slot"`
+		}
+
+		var meta metaRow
+		const metaQuery = `
+			SELECT 
+				COALESCE(t.blockchain_confirmed_at, t.created_at) AS data_timestamp,
+				t.slot AS data_slot
+			FROM trie t
+			JOIN trie_operation o ON o.trie_id = t.id
+			JOIN trie_operation_key tok ON tok.trie_operation_id = o.id
+			JOIN key k ON k.key_hash = tok.key_hash
+			WHERE k.object_id = ?
+			ORDER BY COALESCE(t.blockchain_confirmed_at, t.created_at) DESC, t.slot DESC, t.id DESC
+			LIMIT 1
+		`
+		if err := d.db.WithContext(ctx).Raw(metaQuery, id).Scan(&meta).Error; err != nil {
+			// Fallback to statement time and slot 0 if we can't get data
+			meta.DataTimestamp = time.Now().UTC()
+			meta.DataSlot = 0
+		}
+
+		return &ObjectValuesWithTimestamp{
+			Values:    make(map[string]any),
+			Timestamp: meta.DataTimestamp,
+			Slot:      meta.DataSlot,
+		}, nil
+	}
+
 	out := make(map[string]any, len(rows))
+	var timestamp time.Time
+	var slot int64
+
+	for i, r := range rows {
+		var v any
+		dec := json.NewDecoder(bytes.NewReader(r.Raw))
+		dec.UseNumber()
+		if err := dec.Decode(&v); err != nil {
+			return nil, fmt.Errorf(
+				"failed to unmarshal value for key %s: %w",
+				r.RawKey,
+				err,
+			)
+		}
+		out[r.RawKey] = v
+
+		// Grab timestamp/slot from first row (all rows have identical values)
+		if i == 0 {
+			timestamp = r.DataTimestamp
+			slot = r.DataSlot
+		}
+	}
+
+	return &ObjectValuesWithTimestamp{
+		Values:    out,
+		Timestamp: timestamp.UTC(),
+		Slot:      slot,
+	}, nil
+}
+
+// GetObjectValuesAtSlotWithTimestamp returns the key-value pairs for an object as they existed at a specific slot,
+// along with the corresponding timestamp information. The returned timestamp is latest timestamp among
+// operations contributing to this snapshot at the specified slot boundary.
+func (d *Database) GetObjectValuesAtSlotWithTimestamp(
+	ctx context.Context,
+	id string,
+	slot int64,
+) (*ObjectValuesWithTimestamp, error) {
+	type row struct {
+		RawKey    string         `gorm:"column:raw_key"`
+		Raw       datatypes.JSON `gorm:"column:raw"`
+		Timestamp time.Time      `gorm:"column:timestamp"`
+	}
+
+	var rows []row
+	const rawQuery = `
+		WITH last_ops AS (
+			SELECT DISTINCT ON (tok.key_hash)
+				tok.key_hash,
+				tok.value_hash,
+				o.operation_type,
+				k.raw_key,
+				COALESCE(t.blockchain_confirmed_at, t.created_at) as timestamp
+			FROM trie_operation_key tok
+			JOIN trie_operation o ON o.id = tok.trie_operation_id
+			JOIN trie t           ON t.id = o.trie_id
+			JOIN key  k           ON k.key_hash = tok.key_hash
+			WHERE k.object_id = ? AND t.slot <= ?
+			ORDER BY
+				tok.key_hash,
+				t.slot DESC,
+				t.id DESC,
+				CASE o.operation_type
+					WHEN 'insert' THEN 1
+					WHEN 'update' THEN 2
+					WHEN 'delete' THEN 3
+				END DESC,
+				o.sequence_order DESC,
+				o.id DESC
+		)
+		SELECT lo.raw_key, v.raw, lo.timestamp
+		FROM last_ops lo
+		JOIN value v ON v.value_hash = lo.value_hash
+		WHERE lo.operation_type <> 'delete' AND lo.value_hash IS NOT NULL;
+	`
+	if err := d.db.WithContext(ctx).Raw(rawQuery, id, slot).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf(
+			"failed to get values for object %s at slot %d: %w",
+			id, slot, err,
+		)
+	}
+
+	out := make(map[string]any, len(rows))
+	var latestTimestamp time.Time
+
 	for _, r := range rows {
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(r.Raw))
@@ -545,29 +688,59 @@ func (d *Database) GetObjectCurrentValues(
 			)
 		}
 		out[r.RawKey] = v
+		if r.Timestamp.After(latestTimestamp) {
+			latestTimestamp = r.Timestamp
+		}
 	}
-	return out, nil
+
+	// If no timestamp found, try to get the timestamp for this specific slot
+	if latestTimestamp.IsZero() {
+		var slotTimestamp time.Time
+		const slotQuery = `
+			SELECT COALESCE(t.blockchain_confirmed_at, t.created_at) as timestamp
+			FROM trie t
+			WHERE t.slot = ?
+			ORDER BY t.id DESC
+			LIMIT 1
+		`
+		if err := d.db.WithContext(ctx).Raw(slotQuery, slot).Scan(&slotTimestamp).Error; err == nil {
+			latestTimestamp = slotTimestamp
+		} else {
+			latestTimestamp = time.Now().UTC() // Keep as fallback for when no DB timestamp is available
+		}
+	}
+
+	return &ObjectValuesWithTimestamp{
+		Values:    out,
+		Timestamp: latestTimestamp,
+		Slot:      slot,
+	}, nil
 }
 
-// GetObjectValuesAtTimestamp returns the key-value pairs for an object as they existed at a specific timestamp.
-func (d *Database) GetObjectValuesAtTimestamp(
+// GetObjectValuesAtTimestampWithSlot returns the key-value pairs for an object as they existed at a specific timestamp,
+// along with slot information. The returned slot is the maximum slot among last operations contributing to this snapshot.
+// Note: Different keys may have their last operations at different slots <= timestamp
+// the returned slot represents the highest slot number among all operations that contribute to the snapshot state.
+func (d *Database) GetObjectValuesAtTimestampWithSlot(
 	ctx context.Context,
 	id string,
 	timestamp time.Time,
-) (map[string]any, error) {
+) (*ObjectValuesWithTimestamp, error) {
 	type row struct {
 		RawKey string         `gorm:"column:raw_key"`
 		Raw    datatypes.JSON `gorm:"column:raw"`
+		Slot   int64          `gorm:"column:slot"`
 	}
 
 	var rows []row
 	const rawQuery = `
-			WITH last_ops AS (
+		WITH last_ops AS (
 			SELECT DISTINCT ON (tok.key_hash)
-					tok.key_hash,
-					tok.value_hash,
-					o.operation_type,
-					k.raw_key
+				tok.key_hash,
+				tok.value_hash,
+				o.operation_type,
+				k.raw_key,
+				t.slot
 			FROM trie_operation_key tok
 			JOIN trie_operation o ON o.id = tok.trie_operation_id
 			JOIN trie t           ON t.id = o.trie_id
@@ -585,11 +758,11 @@ func (d *Database) GetObjectValuesAtTimestamp(
 				END DESC,
 				o.sequence_order DESC,
 				o.id DESC
-			)
-			SELECT lo.raw_key, v.raw
-			FROM last_ops lo
-			JOIN value v ON v.value_hash = lo.value_hash
-			WHERE lo.operation_type <> 'delete' AND lo.value_hash IS NOT NULL;
+		)
+		SELECT lo.raw_key, v.raw, lo.slot
+		FROM last_ops lo
+		JOIN value v ON v.value_hash = lo.value_hash
+		WHERE lo.operation_type <> 'delete' AND lo.value_hash IS NOT NULL;
 	`
 	if err := d.db.WithContext(ctx).Raw(rawQuery, id, timestamp).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf(
@@ -599,6 +772,8 @@ func (d *Database) GetObjectValuesAtTimestamp(
 	}
 
 	out := make(map[string]any, len(rows))
+	var maxSlot int64
+
 	for _, r := range rows {
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(r.Raw))
@@ -611,8 +786,16 @@ func (d *Database) GetObjectValuesAtTimestamp(
 			)
 		}
 		out[r.RawKey] = v
+		if r.Slot > maxSlot {
+			maxSlot = r.Slot
+		}
 	}
-	return out, nil
+
+	return &ObjectValuesWithTimestamp{
+		Values:    out,
+		Timestamp: timestamp,
+		Slot:      maxSlot,
+	}, nil
 }
 
 type CostStatistics struct {
@@ -623,6 +806,12 @@ type CostStatistics struct {
 	TotalTransactions int64   `json:"totalTransactions"`
 	LatestSlot        int64   `json:"latestSlot"`
 	EarliestSlot      int64   `json:"earliestSlot"`
+}
+
+type ObjectValuesWithTimestamp struct {
+	Values    map[string]any `json:"values"`
+	Timestamp time.Time      `json:"timestamp"`
+	Slot      int64          `json:"slot"`
 }
 
 // GetCostStatistics returns transaction fee statistics from the trie table
