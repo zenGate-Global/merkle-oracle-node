@@ -509,6 +509,7 @@ func handleGetValueByKeyHash(c *gin.Context) {
 	// Convert value hash to hex for JSON response
 	response := map[string]interface{}{
 		"valueHash": hex.EncodeToString(result.ValueHash),
+		"proof":     result.Proof,
 		"timestamp": result.Timestamp.Format(time.RFC3339Nano),
 		"slot":      result.Slot,
 	}

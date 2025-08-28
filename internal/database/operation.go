@@ -913,6 +913,7 @@ type ValueHashWithTimestamp struct {
 	ValueHash []byte    `json:"valueHash"`
 	Timestamp time.Time `json:"timestamp"`
 	Slot      int64     `json:"slot"`
+	Proof     string    `json:"proof"`
 }
 
 // GetValueByKey returns the current value for a specific object ID and raw key,
@@ -1032,9 +1033,26 @@ func (d *Database) GetValueHashByKeyHash(
 		return nil, nil
 	}
 
+	proof, err := d.ProveTrie(keyHash)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to prove trie for key hash %x: %w",
+			keyHash, err,
+		)
+	}
+
+	proofBytes, err := proof.MarshalCBOR()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to marshal proof for key hash %x: %w",
+			keyHash, err,
+		)
+	}
+
 	return &ValueHashWithTimestamp{
 		ValueHash: result.ValueHash,
 		Timestamp: result.DataTimestamp.UTC(),
 		Slot:      result.DataSlot,
+		Proof:     hex.EncodeToString(proofBytes),
 	}, nil
 }
