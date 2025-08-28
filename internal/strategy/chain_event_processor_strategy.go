@@ -67,18 +67,6 @@ func decodeHexBytes(s string) ([]byte, error) {
 	return hex.DecodeString(trim0x(s))
 }
 
-func (s *ChainEventProcessorActor) keyHashHex(objID, key string) string {
-	return hex.EncodeToString(s.db.Hash([]byte(objID + ":" + key)))
-}
-
-func (s *ChainEventProcessorActor) valueHashHex(v interface{}) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(s.db.Hash(b)), nil
-}
-
 type ValidationReport struct {
 	Valid                bool
 	MissingInsertions    []string
@@ -332,18 +320,18 @@ func (s *ChainEventProcessorActor) diffTrieOpsCore(
 			if k == "object_id" {
 				continue
 			}
-			kh := bytes32(s.db.Hash([]byte(objID + ":" + k)))
-			valBytes, err := json.Marshal(v)
+			kh := bytes32(s.db.KeyHash(objID, k))
+			vh, err := s.db.ValueHash(v)
 			if err != nil {
 				s.logger.Warnf("marshal value for %s:%s: %v", objID, k, err)
 				continue
 			}
-			vh := bytes32(s.db.Hash(valBytes))
+			vhBytes32 := bytes32(vh)
 
 			if pv, existed := currentStateMap[kh]; !existed {
-				insB = append(insB, kvBytes{k: kh, v: vh})
-			} else if pv != vh {
-				updB = append(updB, kvBytes{k: kh, v: vh})
+				insB = append(insB, kvBytes{k: kh, v: vhBytes32})
+			} else if pv != vhBytes32 {
+				updB = append(updB, kvBytes{k: kh, v: vhBytes32})
 				// else unchanged -> no-op
 			}
 			seen[kh] = struct{}{}
@@ -1319,10 +1307,15 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 					continue
 				}
 				// Compute key hash = blake2b256(object_id + ":" + raw_key)
-				kh := bytes32(s.db.Hash([]byte(objID + ":" + k)))
+				kh := bytes32(s.db.KeyHash(objID, k))
 
-				// Marshal raw value back to JSON (primitives only)
-				valBytes, err := json.Marshal(v)
+				// Canonicalize raw value to JSON for consistency
+				marshaled, err := json.Marshal(v)
+				if err != nil {
+					s.logger.Warnf("failed to marshal value for key %s: %v", k, err)
+					continue
+				}
+				valBytes, err := database.CanonicalizeJSON(json.RawMessage(marshaled))
 				if err != nil {
 					s.logger.Warnf(
 						"failed to marshal value for key %s: %v",

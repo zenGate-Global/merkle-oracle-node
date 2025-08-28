@@ -11,7 +11,6 @@ import (
 	"sort"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -169,36 +168,39 @@ func (d *Database) ApplyOracleFile(
 
 		// apply to in-memory trie
 		for _, e := range p.Entries {
-			kh := blake2b.Sum256([]byte(e.ObjectID + ":" + e.RawKey))
+			kh := d.KeyHash(e.ObjectID, e.RawKey)
 			switch e.OperationType {
 			case OpInsert, OpUpdate:
-				canon, err := canonicalizeJSON(e.RawValue)
+				var value interface{}
+				if err := json.Unmarshal(e.RawValue, &value); err != nil {
+					return err
+				}
+				vh, err := d.ValueHash(value)
 				if err != nil {
 					return err
 				}
-				vh := blake2b.Sum256(canon)
 				if e.OperationType == OpInsert {
 					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie set",
-						"key", hex.EncodeToString(kh[:]),
-						"value", hex.EncodeToString(vh[:]),
+						"key", hex.EncodeToString(kh),
+						"value", hex.EncodeToString(vh),
 					)
 				} else {
 					logger.Debugw(
 						"TRIE_DEBUG(APPLY): trie update",
-						"key", hex.EncodeToString(kh[:]),
-						"value", hex.EncodeToString(vh[:]),
+						"key", hex.EncodeToString(kh),
+						"value", hex.EncodeToString(vh),
 					)
 				}
-				if err := d.UpdateTrie(kh[:], vh[:], uint64(p.Slot)); err != nil {
+				if err := d.UpdateTrie(kh, vh, uint64(p.Slot)); err != nil {
 					return err
 				}
 			case OpDelete:
 				logger.Debugw(
 					"TRIE_DEBUG(APPLY): trie delete",
-					"key", hex.EncodeToString(kh[:]),
+					"key", hex.EncodeToString(kh),
 				)
-				if err := d.DeleteTrieEntry(kh[:]); err != nil {
+				if err := d.DeleteTrieEntry(kh); err != nil {
 					return err
 				}
 			}
@@ -207,7 +209,8 @@ func (d *Database) ApplyOracleFile(
 		// object, object_in_file, key, value, tok (trigger updates key state) are persisted
 		emitted := map[grp]map[[32]byte]struct{}{}
 		for _, e := range p.Entries {
-			kh := blake2b.Sum256([]byte(e.ObjectID + ":" + e.RawKey))
+			khBytes := d.KeyHash(e.ObjectID, e.RawKey)
+			kh := bytes32(khBytes)
 
 			// upsert object and provenance
 			obj := &Object{
@@ -257,20 +260,29 @@ func (d *Database) ApplyOracleFile(
 				KeyHash:         kh[:],
 			}
 			if e.OperationType == OpInsert || e.OperationType == OpUpdate {
-				canon, err := canonicalizeJSON(e.RawValue)
+				var value interface{}
+				if err := json.Unmarshal(e.RawValue, &value); err != nil {
+					return err
+				}
+				vhBytes, err := d.ValueHash(value)
 				if err != nil {
 					return err
 				}
-				vh := blake2b.Sum256(canon)
+
+				canon, err := CanonicalizeJSON(e.RawValue)
+				if err != nil {
+					return err
+				}
+
 				// Upsert value
-				val := &Value{ValueHash: vh[:], Raw: datatypes.JSON(canon)}
+				val := &Value{ValueHash: vhBytes, Raw: datatypes.JSON(canon)}
 				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "value_hash"}},
 					DoNothing: true,
 				}).Create(val).Error; err != nil {
 					return err
 				}
-				tok.ValueHash = vh[:]
+				tok.ValueHash = vhBytes
 			} else {
 				tok.ValueHash = nil // must be NULL for delete
 			}
@@ -284,43 +296,6 @@ func (d *Database) ApplyOracleFile(
 	})
 
 	return &outFile, &outTrie, err
-}
-
-// canonicalizeJSON normalizes JSON primitives to a stable byte representation.
-// This project only expects primitives (null, bool, number, string).
-func canonicalizeJSON(raw json.RawMessage) ([]byte, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := encodeCanonical(v, &buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func encodeCanonical(v any, b *bytes.Buffer) error {
-	switch t := v.(type) {
-	case nil:
-		b.WriteString("null")
-	case bool:
-		if t {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case json.Number:
-		b.WriteString(string(t))
-	case string:
-		enc, _ := json.Marshal(t) // ensures escaping
-		b.Write(enc)
-	default:
-		return fmt.Errorf("unsupported JSON value type: %T", v)
-	}
-	return nil
 }
 
 type keyRow struct {
