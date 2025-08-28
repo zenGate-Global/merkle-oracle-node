@@ -32,8 +32,8 @@ func buildMockCurrentState(
 		require.Len(t, parts, 2, "Invalid key format: %s", keyStr)
 		objID, key := parts[0], parts[1]
 
-		keyHex := actor.keyHashHex(objID, key)
-		valueHex, err := actor.valueHashHex(value)
+		keyHex := actor.db.KeyHashHex(objID, key)
+		valueHex, err := actor.db.ValueHashHex(value)
 		require.NoError(t, err)
 		currentState[keyHex] = valueHex
 	}
@@ -59,7 +59,7 @@ func mustValueHash(
 	v interface{},
 ) string {
 	t.Helper()
-	hash, err := actor.valueHashHex(v)
+	hash, err := actor.db.ValueHashHex(v)
 	require.NoError(t, err)
 	return hash
 }
@@ -123,8 +123,8 @@ func TestDiffTrieOps_InsertionsOnly(t *testing.T) {
 	assert.Len(t, deletions, 0)
 
 	expectedKeys := map[string]bool{
-		actor.keyHashHex("user1", "name"): true,
-		actor.keyHashHex("user1", "age"):  true,
+		actor.db.KeyHashHex("user1", "name"): true,
+		actor.db.KeyHashHex("user1", "age"):  true,
 	}
 	for _, insertion := range insertions {
 		assert.True(
@@ -158,8 +158,8 @@ func TestDiffTrieOps_UpdatesOnly(t *testing.T) {
 	assert.Len(t, deletions, 0)
 
 	expectedKeys := map[string]bool{
-		actor.keyHashHex("user1", "name"): true,
-		actor.keyHashHex("user1", "age"):  true,
+		actor.db.KeyHashHex("user1", "name"): true,
+		actor.db.KeyHashHex("user1", "age"):  true,
 	}
 	for _, update := range updates {
 		assert.True(
@@ -194,8 +194,8 @@ func TestDiffTrieOps_DeletionsOnly(t *testing.T) {
 	assert.Len(t, deletions, 2)
 
 	expectedKeys := map[string]bool{
-		actor.keyHashHex("user1", "name"): true,
-		actor.keyHashHex("user1", "age"):  true,
+		actor.db.KeyHashHex("user1", "name"): true,
+		actor.db.KeyHashHex("user1", "age"):  true,
 	}
 	for _, deletion := range deletions {
 		assert.True(
@@ -234,9 +234,9 @@ func TestDiffTrieOps_MixedOperations(t *testing.T) {
 	assert.Greater(t, len(updates), 0, "Should have some updates")
 	assert.Greater(t, len(deletions), 0, "Should have some deletions")
 
-	user1NameKey := actor.keyHashHex("user1", "name")
-	user1EmailKey := actor.keyHashHex("user1", "email")
-	user3NameKey := actor.keyHashHex("user3", "name")
+	user1NameKey := actor.db.KeyHashHex("user1", "name")
+	user1EmailKey := actor.db.KeyHashHex("user1", "email")
+	user3NameKey := actor.db.KeyHashHex("user3", "name")
 
 	found := false
 	for _, update := range updates {
@@ -374,14 +374,14 @@ func TestValueHashHex(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			hash, err := actor.valueHashHex(tc.value)
+			hash, err := actor.db.ValueHashHex(tc.value)
 			assert.NoError(t, err)
 			assert.NotEmpty(t, hash)
 
 			_, err = hex.DecodeString(hash)
 			assert.NoError(t, err)
 
-			hash2, err := actor.valueHashHex(tc.value)
+			hash2, err := actor.db.ValueHashHex(tc.value)
 			assert.NoError(t, err)
 			assert.Equal(t, hash, hash2, "Same value should produce same hash")
 		})
@@ -404,13 +404,13 @@ func TestKeyHashHex(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.objID+"_"+tc.key, func(t *testing.T) {
-			hash := actor.keyHashHex(tc.objID, tc.key)
+			hash := actor.db.KeyHashHex(tc.objID, tc.key)
 			assert.NotEmpty(t, hash)
 
 			_, err := hex.DecodeString(hash)
 			assert.NoError(t, err)
 
-			hash2 := actor.keyHashHex(tc.objID, tc.key)
+			hash2 := actor.db.KeyHashHex(tc.objID, tc.key)
 			assert.Equal(
 				t,
 				hash,
@@ -419,7 +419,7 @@ func TestKeyHashHex(t *testing.T) {
 			)
 
 			if tc.objID != "" && tc.key != "" {
-				differentHash := actor.keyHashHex(tc.objID+"_diff", tc.key)
+				differentHash := actor.db.KeyHashHex(tc.objID+"_diff", tc.key)
 				assert.NotEqual(
 					t,
 					hash,
@@ -457,7 +457,7 @@ func TestValidateTrieOperations_ValidCase(t *testing.T) {
 		Value string `json:"value"`
 	}{
 		{
-			Key:   actor.keyHashHex("user1", "email"),
+			Key:   actor.db.KeyHashHex("user1", "email"),
 			Value: mustValueHash(t, actor, "alice@example.com"),
 		},
 	}
@@ -466,18 +466,18 @@ func TestValidateTrieOperations_ValidCase(t *testing.T) {
 		Value string `json:"value"`
 	}{
 		{
-			Key:   actor.keyHashHex("user1", "name"),
+			Key:   actor.db.KeyHashHex("user1", "name"),
 			Value: mustValueHash(t, actor, "Alice Updated"),
 		},
 		{
-			Key:   actor.keyHashHex("user1", "age"),
+			Key:   actor.db.KeyHashHex("user1", "age"),
 			Value: mustValueHash(t, actor, 26),
 		},
 	}
 	actualDeletions := []struct {
 		Key string `json:"key"`
 	}{
-		{Key: actor.keyHashHex("user3", "status")},
+		{Key: actor.db.KeyHashHex("user3", "status")},
 	}
 
 	report, err := actor.validateTrieOperations(
@@ -517,11 +517,11 @@ func TestValidateTrieOperations_InvalidCase(t *testing.T) {
 		Value string `json:"value"`
 	}{
 		{
-			Key:   actor.keyHashHex("user1", "name"),
+			Key:   actor.db.KeyHashHex("user1", "name"),
 			Value: mustValueHash(t, actor, "Alice"),
 		},
 		{
-			Key:   actor.keyHashHex("user1", "age"),
+			Key:   actor.db.KeyHashHex("user1", "age"),
 			Value: mustValueHash(t, actor, 25),
 		},
 	}
