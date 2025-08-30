@@ -1,4 +1,4 @@
-# ZenGate Global Merkle Oracle Node
+# Merkle Oracle Node
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/zenGate-Global/merkle-oracle-node)](go.mod)
@@ -31,6 +31,11 @@ The node also exposes a comprehensive RESTful API, allowing users and applicatio
 ![Architecture Diagram](./imgs/architecture-diagram.png)
 
 ## Getting Started
+
+## Related Repositories
+
+-   [Merkle Oracle Contracts](https://github.com/zenGate-Global/merkle-oracle-contracts)
+-   [Merkle Oracle CLI](https://github.com/zenGate-Global/merkle-oracle-cli)
 
 ### Prerequisites
 
@@ -82,6 +87,8 @@ The node is configured using a `config.yaml` file. An example with all available
     -   `contractAddress`: (string) The on-chain address of the Merkle oracle validator script.
     -   `singletonPolicyId` & `singletonName`: (string) The policy ID and asset name of the NFT that ensures the contract's UTxO is unique.
     -   `merkleOracleScriptRef`: The transaction output reference (`txId`, `index`) that contains the validator script.
+
+Note: the `contract` section values are determined after running the `genesis` command with the [Merkle Oracle CLI](https://github.com/zenGate-Global/merkle-oracle-cli).
 
 ### Running with Docker Compose (Recommended)
 
