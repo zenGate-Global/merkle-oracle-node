@@ -13,7 +13,7 @@ GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 # Set version strings based on git tag and current ref
 GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'"
 
-.PHONY: build mod-tidy clean test
+.PHONY: build mod-tidy clean test gen-docs
 
 # Alias for building program binary
 build: $(BINARIES)
@@ -45,6 +45,9 @@ test: mod-tidy
 
 bench: mod-tidy
 	go test -v -bench=. ./...
+
+gen-docs:
+	swag init --dir ./internal/api,./internal/database --generalInfo api.go --output ./docs
 
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
