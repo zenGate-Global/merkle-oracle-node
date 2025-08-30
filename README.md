@@ -90,6 +90,8 @@ The node is configured using a `config.yaml` file. An example with all available
 
 Note: the `contract` section values are determined after running the `genesis` command with the [Merkle Oracle CLI](https://github.com/zenGate-Global/merkle-oracle-cli).
 
+The intercept hash should be the block hash of the block includes the genesis transaction or before. The slot should be the absolute slot number of respective block selected.
+
 ### Running with Docker Compose (Recommended)
 
 1.  **Configure:** Create and edit your `config.yaml` as described above.
