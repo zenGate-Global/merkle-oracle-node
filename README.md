@@ -28,7 +28,7 @@ The node also exposes a comprehensive RESTful API, allowing users and applicatio
 
 ## Architecture Diagram
 
-![Architecture Diagram](./assets/architecture-diagram.png)
+![Architecture Diagram](./imgs/architecture-diagram.png)
 
 ## Getting Started
 
