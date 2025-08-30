@@ -31,7 +31,6 @@ type Config struct {
 type ServerConfig struct {
 	ListenAddress    string `yaml:"listenAddress"`
 	ListenPort       int    `yaml:"listenPort"`
-	EnableDebug      bool   `yaml:"enableDebug"`
 	DefaultPageLimit int    `yaml:"defaultPageLimit" envconfig:"SERVER_DEFAULT_PAGE_LIMIT"`
 	MaxPageLimit     int    `yaml:"maxPageLimit"     envconfig:"SERVER_MAX_PAGE_LIMIT"`
 }

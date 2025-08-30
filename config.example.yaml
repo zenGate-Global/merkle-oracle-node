@@ -21,7 +21,6 @@ debug:
 server:
   listenAddress: "0.0.0.0"
   listenPort: 8080
-  enableDebug: false
   defaultPageLimit: 50
   maxPageLimit: 1000
 

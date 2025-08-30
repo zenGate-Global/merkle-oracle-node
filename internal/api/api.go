@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/pprof"
 	"strconv"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	scalargo "github.com/bdpiprava/scalar-go"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // @title        Merkle Oracle Node API
@@ -106,30 +104,6 @@ func Start(
 	// Statistics endpoints
 	router.GET("/statistics/costs", handleGetCostStatistics)
 
-	// Setup metrics endpoint
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
-
-	if cfg.Server.EnableDebug {
-		debugGroup := router.Group("/debug/pprof")
-		{
-			debugGroup.GET("/", gin.WrapF(pprof.Index))
-			debugGroup.GET("/cmdline", gin.WrapF(pprof.Cmdline))
-			debugGroup.GET("/profile", gin.WrapF(pprof.Profile))
-			debugGroup.POST("/symbol", gin.WrapF(pprof.Symbol))
-			debugGroup.GET("/symbol", gin.WrapF(pprof.Symbol))
-			debugGroup.GET("/trace", gin.WrapF(pprof.Trace))
-			debugGroup.GET("/allocs", gin.WrapH(pprof.Handler("allocs")))
-			debugGroup.GET("/block", gin.WrapH(pprof.Handler("block")))
-			debugGroup.GET("/goroutine", gin.WrapH(pprof.Handler("goroutine")))
-			debugGroup.GET("/heap", gin.WrapH(pprof.Handler("heap")))
-			debugGroup.GET("/mutex", gin.WrapH(pprof.Handler("mutex")))
-			debugGroup.GET(
-				"/threadcreate",
-				gin.WrapH(pprof.Handler("threadcreate")),
-			)
-		}
-	}
-
 	// Generate and setup API docs
 	generateScalarDocs()
 	router.GET("/docs", func(c *gin.Context) {
@@ -161,10 +135,6 @@ func Start(
 	)
 
 	logger.Info("Starting API server", "address", serverAddr)
-	logger.Info("Metrics available at /metrics")
-	if cfg.Server.EnableDebug {
-		logger.Info("Debug endpoints available at /debug/pprof/*")
-	}
 
 	server := &http.Server{
 		Addr:    serverAddr,
