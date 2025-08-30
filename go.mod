@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/client_golang v1.23.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.11.0
+	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
 	github.com/zde37/pinata-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20250811042717-4d037378a6df
