@@ -17,6 +17,7 @@ import (
 	"zenGate-Global/merkle-oracle-node/internal/provider"
 	"zenGate-Global/merkle-oracle-node/internal/tx"
 	"zenGate-Global/merkle-oracle-node/internal/types"
+	"zenGate-Global/merkle-oracle-node/internal/version"
 
 	"github.com/anthdm/hollywood/actor"
 	"github.com/blinklabs-io/gouroboros/protocol/common"
@@ -934,7 +935,7 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		Data:                  oracleDataMap,
 		PreviousMerkleRoot:    prevMerkleRootHex,
 		PreviousFileReference: previousFileReference,
-		TrieLibrary:           "merkle-oracle-node",
+		TrieLibrary:           version.TrieLibrary,
 		CreatedAt:             blockEvent.EventTimestamp.Unix(),
 	}
 	uploadPayload.TrieData.Insertions = ins

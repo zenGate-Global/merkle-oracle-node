@@ -11,7 +11,7 @@ BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common)
 GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 
 # Set version strings based on git tag and current ref
-GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'"
+GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)' -X '$(GOMODULE)/internal/version.TrieLibrary=$(shell go list -m -json github.com/blinklabs-io/merkle-patricia-forestry | jq -r '"\(.Path)@\(.Version)+\(.Sum)"')'"
 
 .PHONY: build mod-tidy clean test gen-docs
 

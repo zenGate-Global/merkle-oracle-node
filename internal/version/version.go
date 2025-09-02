@@ -7,6 +7,7 @@ import (
 // These are populated at build time
 var Version string
 var CommitHash string
+var TrieLibrary string
 
 func GetVersionString() string {
 	if Version != "" {
