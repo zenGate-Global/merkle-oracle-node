@@ -45,6 +45,7 @@ The node also exposes a comprehensive RESTful API, allowing users and applicatio
 -   Blockfrost API, Ogmios+Kupo, UtxoRPC, or Maestro API (the submit part of config file is optional)
 -   [Pinata API](https://pinata.cloud/) access (IPFS) OR [GCP](https://cloud.google.com/storage) bucket (used for development or staging)
 -   An Oracle API endpoint that returns the oracle data in the format specified in `internal/oprovider/oprovider.go`
+    - A mock implementation of a data provider can be found [here](https://github.com/zenGate-Global/oracle-data-provider)
 
 ### Configuration
 
