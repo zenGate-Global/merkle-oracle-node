@@ -134,7 +134,7 @@ func Start(
 		cfg.Server.ListenPort,
 	)
 
-	logger.Info("Starting API server", "address", serverAddr)
+	logger.Infof("Starting API server on %s", serverAddr)
 
 	server := &http.Server{
 		Addr:    serverAddr,
