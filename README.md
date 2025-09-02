@@ -42,6 +42,9 @@ The node also exposes a comprehensive RESTful API, allowing users and applicatio
 -   Go `1.24` or later
 -   Docker and Docker Compose
 -   Access to a running PostgreSQL instance (can use dockerized postgres)
+-   Blockfrost API, Ogmios+Kupo, UtxoRPC, or Maestro API (the submit part of config file is optional)
+-   [Pinata API](https://pinata.cloud/) access (IPFS) OR [GCP](https://cloud.google.com/storage) bucket (used for development or staging)
+-   An Oracle API endpoint that returns the oracle data in the format specified in `internal/oprovider/oprovider.go`
 
 ### Configuration
 
