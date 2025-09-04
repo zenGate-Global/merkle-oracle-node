@@ -1025,7 +1025,8 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 			cloudRefBytes,
 		)
 		if err != nil {
-			return fmt.Errorf("rebuild tx: %w", err)
+			s.logger.Errorf("failed to rebuild tx: %v", err)
+			return nil
 		}
 
 		inputs = make([]tx.InputKey, 0, len(txObj.TransactionBody.Inputs))
@@ -1054,7 +1055,8 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 		txHash, err = submit()
 	}
 	if err != nil {
-		return fmt.Errorf("submit tx: %w", err)
+		s.logger.Errorf("failed to submit tx: %v", err)
+		return nil
 	}
 
 	s.logger.Infof(
