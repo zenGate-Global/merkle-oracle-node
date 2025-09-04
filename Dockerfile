@@ -6,6 +6,7 @@ RUN make build
 
 FROM cgr.dev/chainguard/glibc-dynamic AS node
 COPY --from=build /code/node /bin/
+COPY --from=build /code/docs /data/docs
 
 VOLUME /data
 WORKDIR /data
