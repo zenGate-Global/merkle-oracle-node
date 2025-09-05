@@ -1,0 +1,186 @@
+name: Deploy to Google Cloud
+
+on:
+  # Trigger on tags for automatic deployment
+  push:
+    tags:
+      - 'v*.*.*'
+  
+  # Manual deployment workflow
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      tag:
+        description: 'Git tag to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+      force_deploy:
+        description: 'Force deployment even if tag already exists'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  APPLICATION_NAME: "merkle-oracle-node"
+  REGISTRY: "gcr.io"
+
+jobs:
+  deploy:
+    name: Deploy to Google Cloud
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      
+      - name: Set deployment variables
+        id: vars
+        run: |
+          # Determine environment
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            # Auto-deploy tags to staging by default
+            ENVIRONMENT="staging"
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          
+          # Set environment-specific variables
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}"
+            REGION="europe-west1"
+            CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
+          else
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}-staging"
+            REGION="europe-west1"
+            CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
+          fi
+          
+          IMAGE_NAME="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.APPLICATION_NAME }}"
+          IMAGE_TAG="${IMAGE_NAME}:${TAG}"
+          
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+          echo "service_name=${SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "region=${REGION}" >> $GITHUB_OUTPUT
+          echo "cloudsql_instance=${CLOUDSQL_INSTANCE}" >> $GITHUB_OUTPUT
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ steps.vars.outputs.project_id }}
+      
+      - name: Configure Docker for GCR
+        run: |
+          gcloud auth configure-docker gcr.io
+      
+      - name: Build Docker image
+        run: |
+          docker build -f Dockerfile.cloudrun -t ${{ steps.vars.outputs.image_tag }} .
+          docker tag ${{ steps.vars.outputs.image_tag }} ${{ steps.vars.outputs.image_name }}:latest
+      
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.vars.outputs.image_tag }}
+          docker push ${{ steps.vars.outputs.image_name }}:latest
+      
+
+
+      - name: Deploy to Cloud Run
+        run: |
+          # Set environment-specific variables
+          if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
+            NETWORK="mainnet"
+            PROFILE="oracle-mainnet"
+            EXPLORER_URI="https://cardanoscan.io/transaction/"
+            LOG_FILE="mainnet.log"
+          else
+            NETWORK="preview"
+            PROFILE="oracle-preview"
+            EXPLORER_URI="https://preview.cardanoscan.io/transaction/"
+            LOG_FILE="preview.log"
+          fi
+
+          gcloud run deploy ${{ steps.vars.outputs.service_name }} \
+            --image ${{ steps.vars.outputs.image_tag }} \
+            --platform managed \
+            --region ${{ steps.vars.outputs.region }} \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 1 \
+            --max-instances 5 \
+            --timeout 3600 \
+            --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
+            --update-env-vars "PROFILE=${PROFILE}" \
+            --update-env-vars "NETWORK=${NETWORK}" \
+            --update-env-vars "INDEXER_INTERCEPT_HASH=${{ secrets.INDEXER_INTERCEPT_HASH }}" \
+            --update-env-vars "INDEXER_INTERCEPT_SLOT=${{ secrets.INDEXER_INTERCEPT_SLOT }}" \
+            --update-env-vars "INDEXER_TX_EXPIRATION_BLOCK_NUMBER=3" \
+            --update-env-vars "INDEXER_RESTART_THRESHOLD=3" \
+            --update-env-vars "INDEXER_RESTART_TIME_WINDOW=10m" \
+            --update-env-vars "METRICS_LISTEN_ADDRESS=0.0.0.0" \
+            --update-env-vars "METRICS_LISTEN_PORT=9094" \
+            --update-env-vars "DEBUG_LISTEN_ADDRESS=0.0.0.0" \
+            --update-env-vars "DEBUG_LISTEN_PORT=9093" \
+            --update-env-vars "SERVER_DEFAULT_PAGE_LIMIT=50" \
+            --update-env-vars "SERVER_MAX_PAGE_LIMIT=1000" \
+            --update-env-vars "SUBMIT_URL=${{ secrets.SUBMIT_URL }}" \
+            --update-env-vars "API_BLOCKFROST_URL=${{ secrets.BLOCKFROST_URL }}" \
+            --update-env-vars "OGMIOS_URL=${{ secrets.OGMIOS_URL }}" \
+            --update-env-vars "KUPO_URL=${{ secrets.KUPO_URL }}" \
+            --update-env-vars "UTXORPC_URL=${{ secrets.UTXORPC_URL }}" \
+            --update-env-vars "BUCKET_NAME=${{ secrets.GCP_BUCKET_NAME }}" \
+            --update-env-vars "PINATA_GATEWAY_URL=https://gateway.pinata.cloud" \
+            --update-env-vars "ORACLE_UPDATE_INTERVAL=10m" \
+            --update-env-vars "ORACLE_BASE_URL=${{ secrets.ORACLE_BASE_URL }}" \
+            --update-env-vars "CONTRACT_ADDRESS=${{ secrets.CONTRACT_ADDRESS }}" \
+            --update-env-vars "SINGLETON_POLICY_ID=${{ secrets.SINGLETON_POLICY_ID }}" \
+            --update-env-vars "SINGLETON_NAME=merkle_oracle_singleton" \
+            --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
+            --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
+            --update-secrets "SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest" \
+            --update-secrets "BLOCKFROST_API_KEY=blockfrost-api-key-${{ steps.vars.outputs.environment }}:latest" \
+            --update-secrets "MAESTRO_API_KEY=maestro-api-key-${{ steps.vars.outputs.environment }}:latest" \
+            --update-secrets "PINATA_JWT=pinata-jwt-${{ steps.vars.outputs.environment }}:latest"
+      
+      - name: Deployment Summary
+        run: |
+          echo "🚀 Deployment completed successfully!"
+          echo "Environment: ${{ steps.vars.outputs.environment }}"
+          echo "Tag: ${{ steps.vars.outputs.tag }}"
+          echo "Service: ${{ steps.vars.outputs.service_name }}"
+          echo "Image: ${{ steps.vars.outputs.image_tag }}"
+          echo "Region: ${{ steps.vars.outputs.region }}"
+          
+          # Get service URL
+          SERVICE_URL=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --format 'value(status.url)')
+          echo "Service URL: ${SERVICE_URL}"

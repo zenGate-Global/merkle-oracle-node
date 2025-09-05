@@ -1,0 +1,137 @@
+name: Rollback Google Cloud Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      rollback_tag:
+        description: 'Tag to rollback to (e.g., v1.0.0)'
+        required: true
+        type: string
+      confirm_rollback:
+        description: 'Type "CONFIRM" to proceed with rollback'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  APPLICATION_NAME: "merkle-oracle-node"
+  REGISTRY: "gcr.io"
+
+jobs:
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [[ "${{ github.event.inputs.confirm_rollback }}" != "CONFIRM" ]]; then
+            echo "❌ Rollback not confirmed. Please type 'CONFIRM' to proceed."
+            exit 1
+          fi
+      
+      - name: Set rollback variables
+        id: vars
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          TAG="${{ github.event.inputs.rollback_tag }}"
+          
+          # Set environment-specific variables
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}"
+            REGION="europe-west1"
+          else
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}-staging"
+            REGION="europe-west1"
+          fi
+          
+          IMAGE_NAME="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.APPLICATION_NAME }}"
+          IMAGE_TAG="${IMAGE_NAME}:${TAG}"
+          
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+          echo "service_name=${SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "region=${REGION}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ steps.vars.outputs.project_id }}
+      
+      - name: Verify image exists
+        run: |
+          echo "🔍 Verifying that image ${{ steps.vars.outputs.image_tag }} exists..."
+          if ! gcloud container images describe ${{ steps.vars.outputs.image_tag }} >/dev/null 2>&1; then
+            echo "❌ Image ${{ steps.vars.outputs.image_tag }} not found in registry"
+            echo "Available tags:"
+            gcloud container images list-tags ${{ steps.vars.outputs.image_name }} --limit=10
+            exit 1
+          fi
+          echo "✅ Image found"
+      
+      - name: Get current deployment info
+        id: current
+        run: |
+          echo "📋 Getting current deployment information..."
+          CURRENT_IMAGE=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --format 'value(spec.template.spec.template.spec.containers[0].image)')
+          echo "current_image=${CURRENT_IMAGE}" >> $GITHUB_OUTPUT
+          echo "Current image: ${CURRENT_IMAGE}"
+      
+      - name: Perform rollback
+        run: |
+          echo "🔄 Rolling back ${{ steps.vars.outputs.service_name }} to ${{ steps.vars.outputs.tag }}..."
+          echo "From: ${{ steps.current.outputs.current_image }}"
+          echo "To: ${{ steps.vars.outputs.image_tag }}"
+          
+          gcloud run deploy ${{ steps.vars.outputs.service_name }} \
+            --image ${{ steps.vars.outputs.image_tag }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --quiet
+      
+      - name: Verify rollback
+        run: |
+          echo "✅ Rollback completed!"
+          echo "Environment: ${{ steps.vars.outputs.environment }}"
+          echo "Rolled back to tag: ${{ steps.vars.outputs.tag }}"
+          echo "Service: ${{ steps.vars.outputs.service_name }}"
+          
+          # Get service URL
+          SERVICE_URL=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --format 'value(status.url)')
+          echo "Service URL: ${SERVICE_URL}"
+          
+          # Verify the image was updated
+          NEW_IMAGE=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --format 'value(spec.template.spec.template.spec.containers[0].image)')
+          echo "New image: ${NEW_IMAGE}"
+          
+          if [[ "${NEW_IMAGE}" == "${{ steps.vars.outputs.image_tag }}" ]]; then
+            echo "✅ Rollback verified successfully"
+          else
+            echo "❌ Rollback verification failed"
+            exit 1
+          fi
