@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"zenGate-Global/merkle-oracle-node/internal/cloud"
@@ -66,6 +67,46 @@ func trim0x(s string) string {
 
 func decodeHexBytes(s string) ([]byte, error) {
 	return hex.DecodeString(trim0x(s))
+}
+
+// retryWithExponentialBackoff executes a function with retry logic using exponential backoff
+func retryWithExponentialBackoff(
+	operation func() ([]byte, error),
+	maxAttempts int,
+	initialDelay time.Duration,
+	maxDelay time.Duration,
+	logger *zap.SugaredLogger,
+	operationName string,
+) ([]byte, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, err := operation()
+		if err == nil {
+			if attempt > 1 {
+				logger.Infof("[%s] Succeeded on attempt %d/%d", operationName, attempt, maxAttempts)
+			}
+			return result, nil
+		}
+
+		lastErr = err
+		logger.Warnf("[%s] Attempt %d/%d failed: %v", operationName, attempt, maxAttempts, err)
+
+		if attempt == maxAttempts {
+			break
+		}
+
+		delay := time.Duration(float64(initialDelay) * math.Pow(2, float64(attempt-1)))
+
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+
+		logger.Infof("[%s] Waiting %v before retry %d/%d", operationName, delay, attempt+1, maxAttempts)
+		time.Sleep(delay)
+	}
+
+	return nil, fmt.Errorf("[%s] failed after %d attempts, last error: %v", operationName, maxAttempts, lastErr)
 }
 
 type ValidationReport struct {
@@ -1208,7 +1249,19 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			"[Process Transaction Event] reading cloud data for ipfs cid: %s",
 			ipfsCidDecoded,
 		)
-		cloudData, err := s.cloud.Read(cloud.Ref(ipfsCidDecoded))
+
+		cloudReadOperation := func() ([]byte, error) {
+			return s.cloud.Read(cloud.Ref(ipfsCidDecoded))
+		}
+
+		cloudData, err := retryWithExponentialBackoff(
+			cloudReadOperation,
+			s.appCfg.Cloud.RetryMaxAttempts,
+			s.appCfg.Cloud.RetryInitialDelay,
+			s.appCfg.Cloud.RetryMaxDelay,
+			s.logger,
+			"CloudRead",
+		)
 		if err != nil {
 			return fmt.Errorf("failed to read cloud data: %v", err)
 		}

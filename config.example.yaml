@@ -55,6 +55,9 @@ cloud:
   bucketName: "oracle-bucket-dev"
   pinataGatewayURL: "https://gateway.pinata.cloud"
   pinataJWT: ""
+  retryMaxAttempts: 50
+  retryInitialDelay: 10s
+  retryMaxDelay: 300s
 
 
 oracle:
