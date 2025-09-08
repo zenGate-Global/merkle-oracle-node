@@ -40,6 +40,7 @@ jobs:
     name: Deploy to Google Cloud
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'staging')
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
