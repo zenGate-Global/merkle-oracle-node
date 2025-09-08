@@ -218,7 +218,7 @@ jobs:
             --region ${{ steps.vars.outputs.region }} \
             --allow-unauthenticated \
             --port 8080 \
-            --memory 512Mi \
+            --memory 1Gi \
             --cpu 1 \
             --min-instances 1 \
             --max-instances 5 \
