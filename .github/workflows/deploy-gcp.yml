@@ -228,16 +228,16 @@ jobs:
       
       - name: Deployment Summary
         run: |
-          echo "🚀 Deployment completed successfully!"
-          echo "Environment: ${{ steps.vars.outputs.environment }}"
-          echo "Tag: ${{ steps.vars.outputs.tag }}"
-          echo "Service: ${{ steps.vars.outputs.service_name }}"
-          echo "Image: ${{ steps.vars.outputs.image_tag }}"
-          echo "Region: ${{ steps.vars.outputs.region }}"
-          
           # Get service URL
           SERVICE_URL=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
             --region ${{ steps.vars.outputs.region }} \
             --format 'value(status.url)')
-          echo "Service URL: ${SERVICE_URL}"
-          
+
+          # Create simple GitHub Actions job summary
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          Deployment completed successfully!
+
+          Environment: ${{ steps.vars.outputs.environment }}
+          Tag: ${{ steps.vars.outputs.tag }}
+          Service URL: ${SERVICE_URL}
+          EOF
