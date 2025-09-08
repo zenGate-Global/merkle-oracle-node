@@ -182,12 +182,12 @@ jobs:
 
           cloud:
             gcpCredentialJSONPath: ""
-            bucketName: "${{ vars.GCP_BUCKET_NAME }}"
+            bucketName: "${{ vars.GCP_BUCKET_NAME || 'merkle-oracle-storage-staging' }}"
             pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
             pinataJWT: "${{ secrets.PINATA_JWT }}"
-            retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS }}
-            retryInitialDelay: "${{ vars.CLOUD_RETRY_INITIAL_DELAY }}"
-            retryMaxDelay: "${{ vars.CLOUD_RETRY_MAX_DELAY }}"
+            retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS || 50 }}
+            retryInitialDelay: "${{ vars.CLOUD_RETRY_INITIAL_DELAY || '10s' }}"
+            retryMaxDelay: "${{ vars.CLOUD_RETRY_MAX_DELAY || '300s' }}"
 
           oracle:
             updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
