@@ -111,7 +111,7 @@ jobs:
           docker push ${{ steps.vars.outputs.image_name }}:latest
       
 
-      - name: Deploy to Cloud Run
+      - name: Setup config file
         run: |
           # Set environment-specific variables
           if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
@@ -221,13 +221,7 @@ jobs:
             --max-instances 5 \
             --timeout 3600 \
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
-            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "BLOCKFROST_API_KEY=blockfrost-api-key-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "MAESTRO_API_KEY=maestro-api-key-${{ steps.vars.outputs.environment }}:latest" \
-            --update-secrets "PINATA_JWT=pinata-jwt-${{ steps.vars.outputs.environment }}:latest"
+            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest,DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest,MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest,SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest,BLOCKFROST_API_KEY=blockfrost-api-key-${{ steps.vars.outputs.environment }}:latest,MAESTRO_API_KEY=maestro-api-key-${{ steps.vars.outputs.environment }}:latest,PINATA_JWT=pinata-jwt-${{ steps.vars.outputs.environment }}:latest"
       
       - name: Deployment Summary
         run: |

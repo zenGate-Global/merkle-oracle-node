@@ -23,4 +23,4 @@ WORKDIR /data
 
 USER 65532
 
-ENTRYPOINT ["node"]
+ENTRYPOINT ["node", "-config", "/etc/config/config.yaml"]
