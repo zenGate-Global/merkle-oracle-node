@@ -1,7 +1,7 @@
 name: Deploy to Google Cloud
 
 on:
-  # Trigger on tags for automatic deployment
+  # Trigger on tags for automatic deploymen
   push:
     tags:
       - 'v*.*.*'
