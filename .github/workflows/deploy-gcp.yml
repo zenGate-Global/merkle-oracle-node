@@ -122,6 +122,9 @@ jobs:
             PROFILE="oracle-preview"
           fi
 
+          # Escape the JSON string properly
+          MERKLE_SCRIPT_REF='${{ vars.MERKLE_ORACLE_SCRIPT_REF }}'
+
           gcloud run deploy ${{ steps.vars.outputs.service_name }} \
             --image ${{ steps.vars.outputs.image_tag }} \
             --platform managed \
@@ -154,7 +157,7 @@ jobs:
             --update-env-vars "CONTRACT_ADDRESS=${{ vars.CONTRACT_ADDRESS }}" \
             --update-env-vars "SINGLETON_POLICY_ID=${{ vars.SINGLETON_POLICY_ID }}" \
             --update-env-vars "SINGLETON_NAME=${{ vars.SINGLETON_NAME }}" \
-            --update-env-vars "MERKLE_ORACLE_SCRIPT_REF=${{ vars.MERKLE_ORACLE_SCRIPT_REF }}" \
+            --update-env-vars "MERKLE_ORACLE_SCRIPT_REF=${MERKLE_SCRIPT_REF}" \
 
             --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
