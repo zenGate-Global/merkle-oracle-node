@@ -58,7 +58,6 @@ jobs:
             REGION="${{ vars.GCP_DEPLOYMENT_REGION }}"
           fi
 
-          # Use Artifact Registry instead of GCR
           REGISTRY_URL="${REGION}-docker.pkg.dev"
           IMAGE_NAME="${REGISTRY_URL}/${PROJECT_ID}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.APPLICATION_NAME }}"
           IMAGE_TAG="${IMAGE_NAME}:${TAG}"
@@ -89,12 +88,12 @@ jobs:
             gcloud artifacts docker images list ${{ steps.vars.outputs.image_name }} --limit=10
             exit 1
           fi
-          echo "✅ Image found"
+          echo "Image found"
       
       - name: Get current deployment info
         id: current
         run: |
-          echo "📋 Getting current deployment information..."
+          echo "Getting current deployment information..."
           CURRENT_IMAGE=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
             --region ${{ steps.vars.outputs.region }} \
             --format 'value(spec.template.spec.template.spec.containers[0].image)')
@@ -103,7 +102,7 @@ jobs:
       
       - name: Perform rollback
         run: |
-          echo "🔄 Rolling back ${{ steps.vars.outputs.service_name }} to ${{ steps.vars.outputs.tag }}..."
+          echo "Rolling back ${{ steps.vars.outputs.service_name }} to ${{ steps.vars.outputs.tag }}..."
           echo "From: ${{ steps.current.outputs.current_image }}"
           echo "To: ${{ steps.vars.outputs.image_tag }}"
           
