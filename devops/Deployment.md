@@ -36,16 +36,6 @@ Use the GitHub Actions UI to manually deploy:
    - **Tag**: The git tag to deploy (e.g., v1.2.3)
    - **Force deploy**: Whether to force deployment if tag exists
 
-### 3. Rollback Deployment
-
-To rollback to a previous version:
-
-1. Go to **Actions** → **Rollback Google Cloud Deployment**
-2. Click **Run workflow**
-3. Select:
-   - **Environment**: staging or production
-   - **Rollback tag**: The tag to rollback to (e.g., v1.1.0)
-   - **Confirm rollback**: Type "CONFIRM" to proceed
 
 #### Projects
 Set up separate Google Cloud projects:
@@ -53,44 +43,17 @@ Set up separate Google Cloud projects:
 - `merkle-oracle-node-production` (production)
 
 #### Cloud SQL Instances
-- Staging: `merkle-oracle-node-staging:europe-west1:merkle-oracle-node-staging-db`
-- Production: `merkle-oracle-node-production:europe-west1:merkle-oracle-node-production-db`
 
-### 2. GitHub Secrets Configuration
+### GitHub Secrets Configuration
 
 Add these secrets to your GitHub repository:
 
 #### Staging Environment
 ```
 GCP_PROJECT_ID_STAGING=merkle-oracle-node-staging
-GCP_SA_KEY_STAGING=<service-account-json-key>
-GCP_CLOUDSQL_INSTANCE_STAGING=merkle-oracle-node-staging:europe-west1:merkle-oracle-node-staging-db
 ```
 
 #### Production Environment
-```
-GCP_PROJECT_ID_PROD=merkle-oracle-node-production
-GCP_SA_KEY_PROD=<service-account-json-key>
-GCP_CLOUDSQL_INSTANCE_PROD=merkle-oracle-node-production:europe-west1:merkle-oracle-node-production-db
-```
-
-### 3. Google Cloud Secret Manager
-
-Create the required secrets in each environment. See [environment-variables.md](environment-variables.md) for details.
-
-## Environment Configuration
-
-### Staging Environment
-- **Network**: Cardano Preview Testnet
-- **Service Name**: `merkle-oracle-node-staging`
-- **Domain**: Auto-generated Cloud Run URL
-- **Database**: Staging Cloud SQL instance
-
-### Production Environment
-- **Network**: Cardano Mainnet
-- **Service Name**: `merkle-oracle-node`
-- **Domain**: Auto-generated Cloud Run URL (can be mapped to custom domain)
-- **Database**: Production Cloud SQL instance
 
 ## Manual Deployment Commands
 
@@ -150,11 +113,3 @@ gcloud run deploy merkle-oracle-node-staging \
   --image gcr.io/merkle-oracle-node-staging/merkle-oracle-node:${ROLLBACK_TAG} \
   --region europe-west1
 ```
-
-### Database Rollback Considerations
-
-**Important**: Database migrations are not automatically rolled back. If a deployment includes database schema changes:
-
-1. **Test rollback** in staging first
-2. **Backup database** before production rollback
-3. **Manual intervention** may be required for schema changes
