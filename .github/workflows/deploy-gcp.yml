@@ -33,7 +33,7 @@ permissions:
 
 env:
   APPLICATION_NAME: "merkle-oracle-node"
-  REGISTRY: "gcr.io"
+  ARTIFACT_REGISTRY_REPO: "merkle-oracle-node"
 
 jobs:
   deploy:
@@ -64,16 +64,17 @@ jobs:
           if [[ "$ENVIRONMENT" == "production" ]]; then
             PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
             SERVICE_NAME="${{ env.APPLICATION_NAME }}"
-            REGION="europe-west1"
+            REGION="${{ vars.GCP_DEPLOYMENT_REGION }}"
             CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
           else
             PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
             SERVICE_NAME="${{ env.APPLICATION_NAME }}-staging"
-            REGION="europe-west1"
+            REGION="${{ vars.GCP_DEPLOYMENT_REGION }}"
             CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
           fi
-          
-          IMAGE_NAME="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.APPLICATION_NAME }}"
+
+          REGISTRY_URL="${REGION}-docker.pkg.dev"
+          IMAGE_NAME="${REGISTRY_URL}/${PROJECT_ID}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.APPLICATION_NAME }}"
           IMAGE_TAG="${IMAGE_NAME}:${TAG}"
           
           echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
@@ -95,9 +96,9 @@ jobs:
         with:
           project_id: ${{ steps.vars.outputs.project_id }}
       
-      - name: Configure Docker for GCR
+      - name: Configure Docker for Artifact Registry
         run: |
-          gcloud auth configure-docker gcr.io
+          gcloud auth configure-docker ${{ steps.vars.outputs.region }}-docker.pkg.dev
       
       - name: Build Docker image
         run: |
