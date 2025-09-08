@@ -70,10 +70,13 @@ type ApiConfig struct {
 }
 
 type CloudConfig struct {
-	GCPCredentialJSONPath string `yaml:"gcpCredentialJSONPath" envconfig:"GCP_CREDENTIAL_JSON_PATH"`
-	BucketName            string `yaml:"bucketName"            envconfig:"BUCKET_NAME"`
-	PinataGatewayURL      string `yaml:"pinataGatewayURL"      envconfig:"PINATA_GATEWAY_URL"`
-	PinataJWT             string `yaml:"pinataJWT"             envconfig:"PINATA_JWT"`
+	GCPCredentialJSONPath string        `yaml:"gcpCredentialJSONPath" envconfig:"GCP_CREDENTIAL_JSON_PATH"`
+	BucketName            string        `yaml:"bucketName"            envconfig:"BUCKET_NAME"`
+	PinataGatewayURL      string        `yaml:"pinataGatewayURL"      envconfig:"PINATA_GATEWAY_URL"`
+	PinataJWT             string        `yaml:"pinataJWT"             envconfig:"PINATA_JWT"`
+	RetryMaxAttempts      int           `yaml:"retryMaxAttempts"      envconfig:"CLOUD_RETRY_MAX_ATTEMPTS"`
+	RetryInitialDelay     time.Duration `yaml:"retryInitialDelay"     envconfig:"CLOUD_RETRY_INITIAL_DELAY"`
+	RetryMaxDelay         time.Duration `yaml:"retryMaxDelay"         envconfig:"CLOUD_RETRY_MAX_DELAY"`
 }
 
 type Logging struct {
@@ -182,6 +185,17 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.MaxPageLimit == 0 {
 		c.Server.MaxPageLimit = 1000
+	}
+
+	// Cloud retry defaults
+	if c.Cloud.RetryMaxAttempts == 0 {
+		c.Cloud.RetryMaxAttempts = 3
+	}
+	if c.Cloud.RetryInitialDelay == 0 {
+		c.Cloud.RetryInitialDelay = 1 * time.Second
+	}
+	if c.Cloud.RetryMaxDelay == 0 {
+		c.Cloud.RetryMaxDelay = 30 * time.Second
 	}
 
 	// Network defaults
