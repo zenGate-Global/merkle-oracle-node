@@ -122,8 +122,30 @@ jobs:
             PROFILE="oracle-preview"
           fi
 
-          # Escape the JSON string properly
-          MERKLE_SCRIPT_REF='${{ vars.MERKLE_ORACLE_SCRIPT_REF }}'
+          # Create environment variables file for gcloud to handle complex JSON properly
+          cat > /tmp/env_vars.yaml << EOF
+          PROFILE: "${PROFILE}"
+          NETWORK: "${NETWORK}"
+          INDEXER_INTERCEPT_HASH: "${{ vars.INDEXER_INTERCEPT_HASH }}"
+          INDEXER_INTERCEPT_SLOT: "${{ vars.INDEXER_INTERCEPT_SLOT }}"
+          INDEXER_TX_EXPIRATION_BLOCK_NUMBER: "${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}"
+          INDEXER_RESTART_THRESHOLD: "${{ vars.INDEXER_RESTART_THRESHOLD }}"
+          INDEXER_RESTART_TIME_WINDOW: "${{ vars.INDEXER_RESTART_TIME_WINDOW }}"
+          METRICS_LISTEN_ADDRESS: "${{ vars.METRICS_LISTEN_ADDRESS }}"
+          METRICS_LISTEN_PORT: "${{ vars.METRICS_LISTEN_PORT }}"
+          DEBUG_LISTEN_ADDRESS: "${{ vars.DEBUG_LISTEN_ADDRESS }}"
+          DEBUG_LISTEN_PORT: "${{ vars.DEBUG_LISTEN_PORT }}"
+          SERVER_DEFAULT_PAGE_LIMIT: "${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}"
+          SERVER_MAX_PAGE_LIMIT: "${{ vars.SERVER_MAX_PAGE_LIMIT }}"
+          SUBMIT_URL: "${{ vars.SUBMIT_URL }}"
+          PINATA_GATEWAY_URL: "${{ vars.PINATA_GATEWAY_URL }}"
+          ORACLE_UPDATE_INTERVAL: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
+          ORACLE_BASE_URL: "${{ vars.ORACLE_BASE_URL }}"
+          CONTRACT_ADDRESS: "${{ vars.CONTRACT_ADDRESS }}"
+          SINGLETON_POLICY_ID: "${{ vars.SINGLETON_POLICY_ID }}"
+          SINGLETON_NAME: "${{ vars.SINGLETON_NAME }}"
+          MERKLE_ORACLE_SCRIPT_REF: '${{ vars.MERKLE_ORACLE_SCRIPT_REF }}'
+          EOF
 
           gcloud run deploy ${{ steps.vars.outputs.service_name }} \
             --image ${{ steps.vars.outputs.image_tag }} \
@@ -137,28 +159,7 @@ jobs:
             --max-instances 5 \
             --timeout 3600 \
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
-            --update-env-vars "PROFILE=${PROFILE}" \
-            --update-env-vars "NETWORK=${NETWORK}" \
-            --update-env-vars "INDEXER_INTERCEPT_HASH=${{ vars.INDEXER_INTERCEPT_HASH }}" \
-            --update-env-vars "INDEXER_INTERCEPT_SLOT=${{ vars.INDEXER_INTERCEPT_SLOT }}" \
-            --update-env-vars "INDEXER_TX_EXPIRATION_BLOCK_NUMBER=${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}" \
-            --update-env-vars "INDEXER_RESTART_THRESHOLD=${{ vars.INDEXER_RESTART_THRESHOLD }}" \
-            --update-env-vars "INDEXER_RESTART_TIME_WINDOW=${{ vars.INDEXER_RESTART_TIME_WINDOW }}" \
-            --update-env-vars "METRICS_LISTEN_ADDRESS=${{ vars.METRICS_LISTEN_ADDRESS }}" \
-            --update-env-vars "METRICS_LISTEN_PORT=${{ vars.METRICS_LISTEN_PORT }}" \
-            --update-env-vars "DEBUG_LISTEN_ADDRESS=${{ vars.DEBUG_LISTEN_ADDRESS }}" \
-            --update-env-vars "DEBUG_LISTEN_PORT=${{ vars.DEBUG_LISTEN_PORT }}" \
-            --update-env-vars "SERVER_DEFAULT_PAGE_LIMIT=${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}" \
-            --update-env-vars "SERVER_MAX_PAGE_LIMIT=${{ vars.SERVER_MAX_PAGE_LIMIT }}" \
-            --update-env-vars "SUBMIT_URL=${{ vars.SUBMIT_URL }}" \
-            --update-env-vars "PINATA_GATEWAY_URL=${{ vars.PINATA_GATEWAY_URL }}" \
-            --update-env-vars "ORACLE_UPDATE_INTERVAL=${{ vars.ORACLE_UPDATE_INTERVAL }}" \
-            --update-env-vars "ORACLE_BASE_URL=${{ vars.ORACLE_BASE_URL }}" \
-            --update-env-vars "CONTRACT_ADDRESS=${{ vars.CONTRACT_ADDRESS }}" \
-            --update-env-vars "SINGLETON_POLICY_ID=${{ vars.SINGLETON_POLICY_ID }}" \
-            --update-env-vars "SINGLETON_NAME=${{ vars.SINGLETON_NAME }}" \
-            --update-env-vars "MERKLE_ORACLE_SCRIPT_REF=${MERKLE_SCRIPT_REF}" \
-
+            --env-vars-file /tmp/env_vars.yaml \
             --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest" \
