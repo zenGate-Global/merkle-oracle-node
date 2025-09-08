@@ -178,13 +178,13 @@ jobs:
             ogmiosURL: ""
             kupoURL: ""
             utxorpcURL: ""
-            maestroApiKey: "placeholder_will_be_overridden_by_secret"
+            maestroApiKey: "${{ secrets.MAESTRO_API_KEY }}"
 
           cloud:
             gcpCredentialJSONPath: ""
             bucketName: ""
             pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
-            pinataJWT: "placeholder_will_be_overridden_by_secret"
+            pinataJWT: "${{ secrets.PINATA_JWT }}"
 
           oracle:
             updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
@@ -221,7 +221,7 @@ jobs:
             --max-instances 5 \
             --timeout 3600 \
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
-            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest,DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest,MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest,SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest,MAESTRO_API_KEY=maestro-api-key-${{ steps.vars.outputs.environment }}:latest,PINATA_JWT=pinata-jwt-${{ steps.vars.outputs.environment }}:latest"
+            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest,DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest,MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest,SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest"
       
       - name: Deployment Summary
         run: |
