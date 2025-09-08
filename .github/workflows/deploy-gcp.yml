@@ -126,10 +126,10 @@ jobs:
             LOG_FILE="preview.log"
           fi
 
-          # Create complete config.yaml with all configuration from GitHub variables
+          # Create complete config.yaml with ALL secrets injected securely from GitHub
           cat > /tmp/config.yaml << EOF
           storage:
-            url: "placeholder_will_be_overridden_by_secret"
+            url: "${{ secrets.DATABASE_URL }}"
 
           indexer:
             address: ""
@@ -156,10 +156,10 @@ jobs:
 
           submit:
             url: "${{ vars.SUBMIT_URL }}"
-            blockFrostProjectID: "placeholder_will_be_overridden_by_secret"
+            blockFrostProjectID: "${{ secrets.BLOCKFROST_PROJECT_ID }}"
 
           wallet:
-            mnemonic: "placeholder_will_be_overridden_by_secret"
+            mnemonic: "${{ secrets.WALLET_MNEMONIC }}"
 
           logging:
             level: "info"
@@ -182,9 +182,12 @@ jobs:
 
           cloud:
             gcpCredentialJSONPath: ""
-            bucketName: ""
+            bucketName: "${{ vars.GCP_BUCKET_NAME }}"
             pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
             pinataJWT: "${{ secrets.PINATA_JWT }}"
+            retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS }}
+            retryInitialDelay: "${{ vars.CLOUD_RETRY_INITIAL_DELAY }}"
+            retryMaxDelay: "${{ vars.CLOUD_RETRY_MAX_DELAY }}"
 
           oracle:
             updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
@@ -221,7 +224,7 @@ jobs:
             --max-instances 5 \
             --timeout 3600 \
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
-            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest,DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest,MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest,SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest"
+            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest"
       
       - name: Deployment Summary
         run: |
