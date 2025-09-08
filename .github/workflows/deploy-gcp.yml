@@ -233,11 +233,11 @@ jobs:
             --region ${{ steps.vars.outputs.region }} \
             --format 'value(status.url)')
 
-          # Create simple GitHub Actions job summary
+          SERVICE_HOST=$(echo $SERVICE_URL | sed 's|https://||')
           cat >> $GITHUB_STEP_SUMMARY << EOF
           Deployment completed successfully!
 
           Environment: ${{ steps.vars.outputs.environment }}
           Tag: ${{ steps.vars.outputs.tag }}
-          Service URL: ${SERVICE_URL}
+          Service URL: https://${SERVICE_HOST}
           EOF
