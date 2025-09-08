@@ -102,7 +102,7 @@ jobs:
       
       - name: Build Docker image
         run: |
-          docker build -f Dockerfile.cloudrun -t ${{ steps.vars.outputs.image_tag }} .
+          docker build -t ${{ steps.vars.outputs.image_tag }} .
           docker tag ${{ steps.vars.outputs.image_tag }} ${{ steps.vars.outputs.image_name }}:latest
       
       - name: Push Docker image

@@ -7,7 +7,6 @@ config.testnet.yaml
 config.mainnet.yaml
 config.example.yaml
 config.yaml
-Dockerfile
 node
 README.md
 NEXT.md
