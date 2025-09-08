@@ -1,8 +1,6 @@
 module zenGate-Global/merkle-oracle-node
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25
 
 require (
 	cloud.google.com/go/storage v1.56.1
@@ -17,7 +15,7 @@ require (
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
 	github.com/disgoorg/snowflake/v2 v2.0.3
-	github.com/eko/gocache/lib/v4 v4.2.0
+	github.com/eko/gocache/lib/v4 v4.2.1
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/gin-contrib/zap v1.1.5
 	github.com/gin-gonic/gin v1.10.1
