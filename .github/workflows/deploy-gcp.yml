@@ -117,36 +117,98 @@ jobs:
           if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
             NETWORK="mainnet"
             PROFILE="oracle-mainnet"
+            EXPLORER_URI="https://cardanoscan.io/transaction/"
+            LOG_FILE="mainnet.log"
           else
             NETWORK="preview"
             PROFILE="oracle-preview"
+            EXPLORER_URI="https://preview.cardanoscan.io/transaction/"
+            LOG_FILE="preview.log"
           fi
 
-          # Create environment variables file for gcloud to handle complex JSON properly
-          cat > /tmp/env_vars.yaml << EOF
-          PROFILE: "${PROFILE}"
-          NETWORK: "${NETWORK}"
-          INDEXER_INTERCEPT_HASH: "${{ vars.INDEXER_INTERCEPT_HASH }}"
-          INDEXER_INTERCEPT_SLOT: "${{ vars.INDEXER_INTERCEPT_SLOT }}"
-          INDEXER_TX_EXPIRATION_BLOCK_NUMBER: "${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}"
-          INDEXER_RESTART_THRESHOLD: "${{ vars.INDEXER_RESTART_THRESHOLD }}"
-          INDEXER_RESTART_TIME_WINDOW: "${{ vars.INDEXER_RESTART_TIME_WINDOW }}"
-          METRICS_LISTEN_ADDRESS: "${{ vars.METRICS_LISTEN_ADDRESS }}"
-          METRICS_LISTEN_PORT: "${{ vars.METRICS_LISTEN_PORT }}"
-          DEBUG_LISTEN_ADDRESS: "${{ vars.DEBUG_LISTEN_ADDRESS }}"
-          DEBUG_LISTEN_PORT: "${{ vars.DEBUG_LISTEN_PORT }}"
-          SERVER_DEFAULT_PAGE_LIMIT: "${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}"
-          SERVER_MAX_PAGE_LIMIT: "${{ vars.SERVER_MAX_PAGE_LIMIT }}"
-          SUBMIT_URL: "${{ vars.SUBMIT_URL }}"
-          PINATA_GATEWAY_URL: "${{ vars.PINATA_GATEWAY_URL }}"
-          ORACLE_UPDATE_INTERVAL: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
-          ORACLE_BASE_URL: "${{ vars.ORACLE_BASE_URL }}"
-          CONTRACT_ADDRESS: "${{ vars.CONTRACT_ADDRESS }}"
-          SINGLETON_POLICY_ID: "${{ vars.SINGLETON_POLICY_ID }}"
-          SINGLETON_NAME: "${{ vars.SINGLETON_NAME }}"
-          MERKLE_ORACLE_SCRIPT_REF: '${{ vars.MERKLE_ORACLE_SCRIPT_REF }}'
+          # Create complete config.yaml with all configuration from GitHub variables
+          cat > /tmp/config.yaml << EOF
+          storage:
+            url: "placeholder_will_be_overridden_by_secret"
+
+          indexer:
+            address: ""
+            socketPath: ""
+            interceptHash: "${{ vars.INDEXER_INTERCEPT_HASH }}"
+            interceptSlot: ${{ vars.INDEXER_INTERCEPT_SLOT }}
+            txExpirationBlockNumber: ${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}
+            restartThreshold: ${{ vars.INDEXER_RESTART_THRESHOLD }}
+            restartTimeWindow: "${{ vars.INDEXER_RESTART_TIME_WINDOW }}"
+
+          metrics:
+            listenAddress: "${{ vars.METRICS_LISTEN_ADDRESS }}"
+            listenPort: ${{ vars.METRICS_LISTEN_PORT }}
+
+          debug:
+            listenAddress: "${{ vars.DEBUG_LISTEN_ADDRESS }}"
+            listenPort: ${{ vars.DEBUG_LISTEN_PORT }}
+
+          server:
+            listenAddress: "0.0.0.0"
+            listenPort: 8080
+            defaultPageLimit: ${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}
+            maxPageLimit: ${{ vars.SERVER_MAX_PAGE_LIMIT }}
+
+          submit:
+            url: "${{ vars.SUBMIT_URL }}"
+            blockFrostProjectID: "placeholder_will_be_overridden_by_secret"
+
+          wallet:
+            mnemonic: "placeholder_will_be_overridden_by_secret"
+
+          logging:
+            level: "info"
+            log_discord_webook_url: ""
+            notification_discord_webhook_url: ""
+            explorer_base_uri: "${EXPLORER_URI}"
+            log_file_name: "${LOG_FILE}"
+            log_directory: "assets/logs"
+            max_log_file_size: 100
+            max_backups: 3
+            max_age: 30
+
+          api:
+            blockfrostURL: ""
+            blockfrostApiKey: "placeholder_will_be_overridden_by_secret"
+            ogmiosURL: ""
+            kupoURL: ""
+            utxorpcURL: ""
+            maestroApiKey: "placeholder_will_be_overridden_by_secret"
+
+          cloud:
+            gcpCredentialJSONPath: ""
+            bucketName: ""
+            pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
+            pinataJWT: "placeholder_will_be_overridden_by_secret"
+
+          oracle:
+            updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
+            baseURL: "${{ vars.ORACLE_BASE_URL }}"
+
+          profile: "${PROFILE}"
+          network: "${NETWORK}"
+
+          contract:
+            contractAddress: "${{ vars.CONTRACT_ADDRESS }}"
+            singletonPolicyId: "${{ vars.SINGLETON_POLICY_ID }}"
+            singletonName: "${{ vars.SINGLETON_NAME }}"
+            merkleOracleScriptRef:
+              txId: "96b64c873ed12420fa3da1f2aeed9ed2bcafe9397103dfe9e72e00a52cc6bf25"
+              index: 1
           EOF
 
+      - name: Upload config to Google Cloud Secret Manager
+        run: |
+          # Upload the complete config file to Secret Manager
+          gcloud secrets versions add config-${{ steps.vars.outputs.environment }} --data-file=/tmp/config.yaml
+
+      - name: Deploy to Cloud Run
+        run: |
           gcloud run deploy ${{ steps.vars.outputs.service_name }} \
             --image ${{ steps.vars.outputs.image_tag }} \
             --platform managed \
@@ -159,7 +221,7 @@ jobs:
             --max-instances 5 \
             --timeout 3600 \
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
-            --env-vars-file /tmp/env_vars.yaml \
+            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest" \
