@@ -110,20 +110,15 @@ jobs:
           docker push ${{ steps.vars.outputs.image_name }}:latest
       
 
-
       - name: Deploy to Cloud Run
         run: |
           # Set environment-specific variables
           if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
             NETWORK="mainnet"
             PROFILE="oracle-mainnet"
-            EXPLORER_URI="https://cardanoscan.io/transaction/"
-            LOG_FILE="mainnet.log"
           else
             NETWORK="preview"
             PROFILE="oracle-preview"
-            EXPLORER_URI="https://preview.cardanoscan.io/transaction/"
-            LOG_FILE="preview.log"
           fi
 
           gcloud run deploy ${{ steps.vars.outputs.service_name }} \
@@ -140,29 +135,26 @@ jobs:
             --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
             --update-env-vars "PROFILE=${PROFILE}" \
             --update-env-vars "NETWORK=${NETWORK}" \
-            --update-env-vars "INDEXER_INTERCEPT_HASH=${{ secrets.INDEXER_INTERCEPT_HASH }}" \
-            --update-env-vars "INDEXER_INTERCEPT_SLOT=${{ secrets.INDEXER_INTERCEPT_SLOT }}" \
-            --update-env-vars "INDEXER_TX_EXPIRATION_BLOCK_NUMBER=3" \
-            --update-env-vars "INDEXER_RESTART_THRESHOLD=3" \
-            --update-env-vars "INDEXER_RESTART_TIME_WINDOW=10m" \
-            --update-env-vars "METRICS_LISTEN_ADDRESS=0.0.0.0" \
-            --update-env-vars "METRICS_LISTEN_PORT=9094" \
-            --update-env-vars "DEBUG_LISTEN_ADDRESS=0.0.0.0" \
-            --update-env-vars "DEBUG_LISTEN_PORT=9093" \
-            --update-env-vars "SERVER_DEFAULT_PAGE_LIMIT=50" \
-            --update-env-vars "SERVER_MAX_PAGE_LIMIT=1000" \
-            --update-env-vars "SUBMIT_URL=${{ secrets.SUBMIT_URL }}" \
-            --update-env-vars "API_BLOCKFROST_URL=${{ secrets.BLOCKFROST_URL }}" \
-            --update-env-vars "OGMIOS_URL=${{ secrets.OGMIOS_URL }}" \
-            --update-env-vars "KUPO_URL=${{ secrets.KUPO_URL }}" \
-            --update-env-vars "UTXORPC_URL=${{ secrets.UTXORPC_URL }}" \
-            --update-env-vars "BUCKET_NAME=${{ secrets.GCP_BUCKET_NAME }}" \
-            --update-env-vars "PINATA_GATEWAY_URL=https://gateway.pinata.cloud" \
-            --update-env-vars "ORACLE_UPDATE_INTERVAL=10m" \
-            --update-env-vars "ORACLE_BASE_URL=${{ secrets.ORACLE_BASE_URL }}" \
-            --update-env-vars "CONTRACT_ADDRESS=${{ secrets.CONTRACT_ADDRESS }}" \
-            --update-env-vars "SINGLETON_POLICY_ID=${{ secrets.SINGLETON_POLICY_ID }}" \
-            --update-env-vars "SINGLETON_NAME=merkle_oracle_singleton" \
+            --update-env-vars "INDEXER_INTERCEPT_HASH=${{ vars.INDEXER_INTERCEPT_HASH }}" \
+            --update-env-vars "INDEXER_INTERCEPT_SLOT=${{ vars.INDEXER_INTERCEPT_SLOT }}" \
+            --update-env-vars "INDEXER_TX_EXPIRATION_BLOCK_NUMBER=${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}" \
+            --update-env-vars "INDEXER_RESTART_THRESHOLD=${{ vars.INDEXER_RESTART_THRESHOLD }}" \
+            --update-env-vars "INDEXER_RESTART_TIME_WINDOW=${{ vars.INDEXER_RESTART_TIME_WINDOW }}" \
+            --update-env-vars "METRICS_LISTEN_ADDRESS=${{ vars.METRICS_LISTEN_ADDRESS }}" \
+            --update-env-vars "METRICS_LISTEN_PORT=${{ vars.METRICS_LISTEN_PORT }}" \
+            --update-env-vars "DEBUG_LISTEN_ADDRESS=${{ vars.DEBUG_LISTEN_ADDRESS }}" \
+            --update-env-vars "DEBUG_LISTEN_PORT=${{ vars.DEBUG_LISTEN_PORT }}" \
+            --update-env-vars "SERVER_DEFAULT_PAGE_LIMIT=${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}" \
+            --update-env-vars "SERVER_MAX_PAGE_LIMIT=${{ vars.SERVER_MAX_PAGE_LIMIT }}" \
+            --update-env-vars "SUBMIT_URL=${{ vars.SUBMIT_URL }}" \
+            --update-env-vars "PINATA_GATEWAY_URL=${{ vars.PINATA_GATEWAY_URL }}" \
+            --update-env-vars "ORACLE_UPDATE_INTERVAL=${{ vars.ORACLE_UPDATE_INTERVAL }}" \
+            --update-env-vars "ORACLE_BASE_URL=${{ vars.ORACLE_BASE_URL }}" \
+            --update-env-vars "CONTRACT_ADDRESS=${{ vars.CONTRACT_ADDRESS }}" \
+            --update-env-vars "SINGLETON_POLICY_ID=${{ vars.SINGLETON_POLICY_ID }}" \
+            --update-env-vars "SINGLETON_NAME=${{ vars.SINGLETON_NAME }}" \
+            --update-env-vars "MERKLE_ORACLE_SCRIPT_REF=${{ vars.MERKLE_ORACLE_SCRIPT_REF }}" \
+
             --update-secrets "DATABASE_URL=database-url-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "MNEMONIC=wallet-mnemonic-${{ steps.vars.outputs.environment }}:latest" \
             --update-secrets "SUBMIT_BLOCKFROST_PROJECT_ID=blockfrost-project-id-${{ steps.vars.outputs.environment }}:latest" \
@@ -184,3 +176,4 @@ jobs:
             --region ${{ steps.vars.outputs.region }} \
             --format 'value(status.url)')
           echo "Service URL: ${SERVICE_URL}"
+          
