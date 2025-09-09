@@ -182,7 +182,7 @@ jobs:
 
           cloud:
             gcpCredentialJSONPath: ""
-            bucketName: "${{ vars.GCP_BUCKET_NAME || 'merkle-oracle-storage-staging' }}"
+            bucketName: ""
             pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
             pinataJWT: "${{ secrets.PINATA_JWT }}"
             retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS || 50 }}
