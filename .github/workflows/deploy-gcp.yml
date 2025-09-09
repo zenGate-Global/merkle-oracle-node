@@ -1,0 +1,243 @@
+name: "🚀 Deploy to Google Cloud"
+
+on:
+  # Trigger on tags for automatic deploymen
+  push:
+    tags:
+      - 'v*.*.*'
+  
+  # Manual deployment workflow
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      tag:
+        description: 'Git tag to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+      force_deploy:
+        description: 'Force deployment even if tag already exists'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  APPLICATION_NAME: "merkle-oracle-node"
+  ARTIFACT_REGISTRY_REPO: "merkle-oracle-node"
+
+jobs:
+  deploy:
+    name: "Deploy to ${{ github.event.inputs.environment || 'staging' }}"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'staging')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      
+      - name: Set deployment variables
+        id: vars
+        run: |
+          # Determine environment
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            # Auto-deploy tags to staging by default
+            ENVIRONMENT="staging"
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          
+          # Set environment-specific variables
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}"
+            REGION="${{ vars.GCP_DEPLOYMENT_REGION }}"
+            CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
+          else
+            PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+            SERVICE_NAME="${{ env.APPLICATION_NAME }}-staging"
+            REGION="${{ vars.GCP_DEPLOYMENT_REGION }}"
+            CLOUDSQL_INSTANCE="${{ secrets.GCP_CLOUDSQL_INSTANCE }}"
+          fi
+
+          REGISTRY_URL="${REGION}-docker.pkg.dev"
+          IMAGE_NAME="${REGISTRY_URL}/${PROJECT_ID}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.APPLICATION_NAME }}"
+          IMAGE_TAG="${IMAGE_NAME}:${TAG}"
+          
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+          echo "service_name=${SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "region=${REGION}" >> $GITHUB_OUTPUT
+          echo "cloudsql_instance=${CLOUDSQL_INSTANCE}" >> $GITHUB_OUTPUT
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ steps.vars.outputs.project_id }}
+      
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ steps.vars.outputs.region }}-docker.pkg.dev
+      
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ steps.vars.outputs.image_tag }} .
+          docker tag ${{ steps.vars.outputs.image_tag }} ${{ steps.vars.outputs.image_name }}:latest
+      
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.vars.outputs.image_tag }}
+          docker push ${{ steps.vars.outputs.image_name }}:latest
+      
+
+      - name: Setup config file
+        run: |
+          # Set environment-specific variables
+          if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
+            NETWORK="mainnet"
+            PROFILE="oracle-mainnet"
+            EXPLORER_URI="https://cardanoscan.io/transaction/"
+            LOG_FILE="mainnet.log"
+          else
+            NETWORK="preview"
+            PROFILE="oracle-preview"
+            EXPLORER_URI="https://preview.cardanoscan.io/transaction/"
+            LOG_FILE="preview.log"
+          fi
+
+          # Create complete config.yaml with ALL secrets injected securely from GitHub
+          cat > /tmp/config.yaml << EOF
+          storage:
+            url: "${{ secrets.DATABASE_URL }}"
+
+          indexer:
+            address: ""
+            socketPath: ""
+            interceptHash: "${{ vars.INDEXER_INTERCEPT_HASH }}"
+            interceptSlot: ${{ vars.INDEXER_INTERCEPT_SLOT }}
+            txExpirationBlockNumber: ${{ vars.INDEXER_TX_EXPIRATION_BLOCK_NUMBER }}
+            restartThreshold: ${{ vars.INDEXER_RESTART_THRESHOLD }}
+            restartTimeWindow: "${{ vars.INDEXER_RESTART_TIME_WINDOW }}"
+
+          metrics:
+            listenAddress: "${{ vars.METRICS_LISTEN_ADDRESS }}"
+            listenPort: ${{ vars.METRICS_LISTEN_PORT }}
+
+          debug:
+            listenAddress: "${{ vars.DEBUG_LISTEN_ADDRESS }}"
+            listenPort: ${{ vars.DEBUG_LISTEN_PORT }}
+
+          server:
+            listenAddress: "0.0.0.0"
+            listenPort: 8080
+            defaultPageLimit: ${{ vars.SERVER_DEFAULT_PAGE_LIMIT }}
+            maxPageLimit: ${{ vars.SERVER_MAX_PAGE_LIMIT }}
+
+          submit:
+            url: "${{ vars.SUBMIT_URL }}"
+            blockFrostProjectID: "${{ secrets.BLOCKFROST_PROJECT_ID }}"
+
+          wallet:
+            mnemonic: "${{ secrets.WALLET_MNEMONIC }}"
+
+          logging:
+            level: "info"
+            log_discord_webook_url: ""
+            notification_discord_webhook_url: ""
+            explorer_base_uri: "${EXPLORER_URI}"
+            log_file_name: "${LOG_FILE}"
+            log_directory: "assets/logs"
+            max_log_file_size: 100
+            max_backups: 3
+            max_age: 30
+
+          api:
+            blockfrostURL: ""
+            blockfrostApiKey: ""
+            ogmiosURL: ""
+            kupoURL: ""
+            utxorpcURL: ""
+            maestroApiKey: "${{ secrets.MAESTRO_API_KEY }}"
+
+          cloud:
+            gcpCredentialJSONPath: ""
+            bucketName: ""
+            pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
+            pinataJWT: "${{ secrets.PINATA_JWT }}"
+            retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS || 50 }}
+            retryInitialDelay: "${{ vars.CLOUD_RETRY_INITIAL_DELAY || '10s' }}"
+            retryMaxDelay: "${{ vars.CLOUD_RETRY_MAX_DELAY || '300s' }}"
+
+          oracle:
+            updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
+            baseURL: "${{ vars.ORACLE_BASE_URL }}"
+
+          profile: "${PROFILE}"
+          network: "${NETWORK}"
+
+          contract:
+            contractAddress: "${{ vars.CONTRACT_ADDRESS }}"
+            singletonPolicyId: "${{ vars.SINGLETON_POLICY_ID }}"
+            singletonName: "${{ vars.SINGLETON_NAME }}"
+            merkleOracleScriptRef:
+              txId: "96b64c873ed12420fa3da1f2aeed9ed2bcafe9397103dfe9e72e00a52cc6bf25"
+              index: 1
+          EOF
+
+      - name: Upload config to Google Cloud Secret Manager
+        run: |
+          # Upload the complete config file to Secret Manager
+          gcloud secrets versions add config-${{ steps.vars.outputs.environment }} --data-file=/tmp/config.yaml
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ steps.vars.outputs.service_name }} \
+            --image ${{ steps.vars.outputs.image_tag }} \
+            --platform managed \
+            --region ${{ steps.vars.outputs.region }} \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 1Gi \
+            --cpu 1 \
+            --min-instances 1 \
+            --max-instances 5 \
+            --timeout 3600 \
+            --add-cloudsql-instances ${{ steps.vars.outputs.cloudsql_instance }} \
+            --set-secrets "/etc/config/config.yaml=config-${{ steps.vars.outputs.environment }}:latest"
+      
+      - name: Deployment Summary
+        run: |
+          # Get service URL
+          SERVICE_URL=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} \
+            --region ${{ steps.vars.outputs.region }} \
+            --format 'value(status.url)')
+
+          SERVICE_HOST=$(echo $SERVICE_URL | sed 's|https://||')
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          Deployment completed successfully!
+
+          Environment: ${{ steps.vars.outputs.environment }}
+          Tag: ${{ steps.vars.outputs.tag }}
+          Service URL: https://${SERVICE_HOST}
+          EOF

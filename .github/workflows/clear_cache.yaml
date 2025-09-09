@@ -1,6 +1,6 @@
 # This job cleans up the unnecessary caches created on PRs.
 # https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#force-deleting-cache-entries
-name: cleanup caches by a branch
+name: "🧹 Cleanup PR Caches"
 on:
   # Only runs on the PRs are closed, regardless of it is merged or not.
   # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-your-pull_request-workflow-when-a-pull-request-merges
@@ -10,6 +10,7 @@ on:
 
 jobs:
   cleanup:
+    name: "Clean Branch Caches"
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
