@@ -1,7 +1,7 @@
 # This file was copied from the following URL and modified:
 # https://github.com/golangci/golangci-lint-action/blob/master/README.md#how-to-use
 
-name: "🔍 Code Quality & Linting"
+name: "🔍 Lint"
 on:
   push:
     tags:
