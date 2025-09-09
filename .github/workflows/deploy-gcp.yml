@@ -37,22 +37,6 @@ jobs:
     environment: ${{ github.event.inputs.environment || 'staging' }}
     if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'staging')
     steps:
-      - name: Validate tag exists
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          TAG="${{ github.event.inputs.tag }}"
-          echo "Checking if tag '${TAG}' exists..."
-
-          # Check if tag exists on remote
-          if ! git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
-            echo "❌ Tag '${TAG}' does not exist in the repository."
-            echo "Available tags:"
-            git ls-remote --tags origin | sed 's/.*refs\/tags\//  - /' | head -10
-            echo "Please create the tag first or use an existing tag."
-            exit 1
-          fi
-          echo "✅ Tag '${TAG}' found."
-
       - name: Checkout code
         uses: actions/checkout@v5
         with:
