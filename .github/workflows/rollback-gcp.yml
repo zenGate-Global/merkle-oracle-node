@@ -1,4 +1,4 @@
-name: Rollback Google Cloud Deployment
+name: "⏪ Rollback Google Cloud Deployment"
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   rollback:
-    name: Rollback Deployment
+    name: "Rollback to ${{ github.event.inputs.rollback_tag }} (${{ github.event.inputs.environment }})"
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
     

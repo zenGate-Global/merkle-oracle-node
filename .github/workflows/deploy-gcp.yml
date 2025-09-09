@@ -1,4 +1,4 @@
-name: Deploy to Google Cloud
+name: "🚀 Deploy to Google Cloud"
 
 on:
   # Trigger on tags for automatic deploymen
@@ -37,7 +37,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy to Google Cloud
+    name: "Deploy to ${{ github.event.inputs.environment || 'staging' }}"
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
     if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'staging')
