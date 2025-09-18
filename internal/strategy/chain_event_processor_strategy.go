@@ -568,6 +568,13 @@ func (s *ChainEventProcessorActor) garbageCollectOldBlocks(cutoffSlot uint64) {
 		}
 	}
 
+	// should not be needed, but incase block key not found in `cnt, ok := s.blockTransactionCountMap[blockKey]`
+	for bk := range s.blockTransactionCountMap {
+		if bk.SlotNumber < cutoffSlot {
+			delete(s.blockTransactionCountMap, bk)
+		}
+	}
+
 	if len(removedBlocks) > 0 {
 		s.logger.Debugf(
 			"Garbage collected %d old processed blocks (cutoff slot: %d)",
@@ -667,7 +674,15 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 				msg.EventTransaction.BlockHash,
 				msg.EventContext.SlotNumber,
 			)
-			if cnt := s.blockTransactionCountMap[blockKey]; cnt <= 1 {
+
+			cnt, ok := s.blockTransactionCountMap[blockKey]
+			if !ok {
+				// this should never happen
+				s.logger.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+				return fmt.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+			}
+
+			if cnt <= 1 {
 				delete(s.blockTransactionCountMap, blockKey)
 				blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
 				if err := s.db.AddCursorPoint(common.Point{
@@ -676,10 +691,8 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 				}); err != nil {
 					s.logger.Errorf("failed to update cursor: %v", err)
 				}
-			} else if cnt > 1 {
-				s.blockTransactionCountMap[blockKey] = cnt - 1
 			} else {
-				s.logger.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+				s.blockTransactionCountMap[blockKey] = cnt - 1
 			}
 
 			// build after all block transactions are processed to make sure we build with updated trie WRT the utxo being consumed
@@ -1590,6 +1603,20 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 				deletedTransactionCountEntries,
 				blockKey,
 			)
+		}
+	}
+
+	// handle any forked blocks at rollback slot
+
+	for bk := range s.processedBlockMap {
+		if bk.SlotNumber == rollbackEvent.SlotNumber && bk.BlockHash != rollbackEvent.BlockHash {
+			delete(s.processedBlockMap, bk)
+		}
+	}
+
+	for bk := range s.blockTransactionCountMap {
+		if bk.SlotNumber == rollbackEvent.SlotNumber && bk.BlockHash != rollbackEvent.BlockHash {
+			delete(s.blockTransactionCountMap, bk)
 		}
 	}
 
