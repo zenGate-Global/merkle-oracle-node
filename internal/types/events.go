@@ -23,6 +23,7 @@ type SetParentPID struct {
 // Events that can be sent to strategies
 type IndexerBlockEvent struct {
 	BlockEvent input_chainsync.BlockEvent
+	Timestamp  time.Time
 	TipReached bool
 }
 
