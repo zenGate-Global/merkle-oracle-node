@@ -1,11 +1,10 @@
-name: Release
+name: "📦 Build"
 on:
   pull_request:
     branches: [main]
     paths-ignore:
       - "**/*.md"
   push:
-    branches: [main]
     tags: ["v*.*.*"] # Ex. v0.1.0, v0.1.1-rc2
 
 permissions:
@@ -26,7 +25,7 @@ concurrency:
 
 jobs:
   pre_release:
-    name: Pre-release build
+    name: "Build Artifacts"
     runs-on: ubuntu-latest
     outputs:
       VERSION: ${{ steps.output-version.outputs.VERSION }}
@@ -106,7 +105,7 @@ jobs:
 
   pre_release_test:
     needs: pre_release
-    name: Pre-release test (${{ matrix.os }})
+    name: "Test Artifacts (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
     outputs:
       VERSION: ${{ needs.pre_release.outputs.VERSION }}
@@ -145,7 +144,7 @@ jobs:
   release:
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     needs: pre_release_test
-    name: Release
+    name: "Publish GitHub Release"
     runs-on: ubuntu-latest
 
     steps:

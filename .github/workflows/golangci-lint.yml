@@ -1,7 +1,7 @@
 # This file was copied from the following URL and modified:
 # https://github.com/golangci/golangci-lint-action/blob/master/README.md#how-to-use
 
-name: golangci
+name: "🔍 Lint"
 on:
   push:
     tags:
@@ -15,7 +15,7 @@ permissions:
   pull-requests: read
 jobs:
   golangci:
-    name: lint
+    name: "Run Linter"
     strategy:
       matrix:
         go-version: [1.24.x]
