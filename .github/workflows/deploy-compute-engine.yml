@@ -96,22 +96,64 @@ jobs:
         run: |
           gcloud secrets versions access latest --secret="merkle-oracle-config" > /tmp/config.yaml
 
-      - name: Deploy to Compute Engine
+      - name: Deploy to Compute Engine (Secure - No SSH)
         run: |
-          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="
-            # Authenticate Docker
-            ACCESS_TOKEN=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | cut -d'\"' -f4)
-            echo \$ACCESS_TOKEN | docker login -u oauth2accesstoken --password-stdin https://${{ env.REGION }}-docker.pkg.dev
+          # Create deployment script that will run on VM startup
+          cat > /tmp/deploy-script.sh << 'EOF'
+          #!/bin/bash
+          set -e
 
-            # Update config from Secret Manager
-            sudo systemctl start merkle-oracle-startup
+          # Get the new image tag from metadata
+          NEW_IMAGE=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/deploy-image" || echo "")
 
-            # Set the new image tag for the systemd service
-            echo '${{ steps.vars.outputs.image_tag }}' | sudo tee /tmp/merkle-oracle-current-image > /dev/null
+          if [ -z "$NEW_IMAGE" ]; then
+            echo "No deployment image specified in metadata"
+            exit 0
+          fi
 
-            # Restart the service with new image
-            sudo systemctl restart merkle-oracle-node
-          "
+          echo "Deploying new image: $NEW_IMAGE"
+
+          # Authenticate Docker using service account
+          ACCESS_TOKEN=$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | cut -d'"' -f4)
+          echo $ACCESS_TOKEN | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
+
+          # Update config from Secret Manager
+          systemctl start merkle-oracle-startup
+
+          # Set the new image tag for the systemd service
+          echo "$NEW_IMAGE" > /tmp/merkle-oracle-current-image
+
+          # Restart the service with new image
+          systemctl restart merkle-oracle-node
+
+          # Clear the deployment metadata to prevent re-deployment
+          gcloud compute instances remove-metadata $(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/name") \
+            --zone=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/zone" | cut -d'/' -f4) \
+            --keys=deploy-image
+
+          echo "Deployment completed successfully"
+          EOF
+
+          # Upload the deployment script to the VM via metadata and trigger execution
+          gcloud compute instances add-metadata ${{ steps.vars.outputs.instance_name }} \
+            --zone=${{ env.ZONE }} \
+            --metadata=deploy-image="${{ steps.vars.outputs.image_tag }}",deploy-script="$(cat /tmp/deploy-script.sh)"
+
+          # Trigger the deployment by restarting the startup script service
+          gcloud compute instances add-metadata ${{ steps.vars.outputs.instance_name }} \
+            --zone=${{ env.ZONE }} \
+            --metadata=startup-script='#!/bin/bash
+          # Check if deployment script exists in metadata
+          DEPLOY_SCRIPT=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/deploy-script" 2>/dev/null || echo "")
+          if [ ! -z "$DEPLOY_SCRIPT" ]; then
+            echo "$DEPLOY_SCRIPT" > /tmp/deploy.sh
+            chmod +x /tmp/deploy.sh
+            /tmp/deploy.sh
+            rm -f /tmp/deploy.sh
+          fi'
+
+          # Reset the VM to trigger startup script execution
+          gcloud compute instances reset ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }}
 
       - name: Cleanup old images
         run: |
