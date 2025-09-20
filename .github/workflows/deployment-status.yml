@@ -1,0 +1,131 @@
+name: "📊 Deployment Status"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_ID: "palm-portal-staging"
+  ZONE: "europe-west1-b"
+  INSTANCE_NAME: "merkle-oracle-ubuntu"
+
+jobs:
+  status:
+    name: "Check Deployment Status"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Check VM and Container Status
+        id: status
+        run: |
+          # Get VM status
+          VM_STATUS=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format="value(status)" 2>/dev/null || echo "NOT_FOUND")
+          
+          if [[ "$VM_STATUS" == "RUNNING" ]]; then
+            # Get VM IP
+            VM_IP=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+            
+            # Check container status
+            CONTAINER_STATUS=$(gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --command="docker ps --filter name=merkle-oracle-node --format '{{.Status}}'" 2>/dev/null || echo "ERROR")
+            
+            # Check container image
+            CONTAINER_IMAGE=$(gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --command="docker ps --filter name=merkle-oracle-node --format '{{.Image}}'" 2>/dev/null | sed 's/.*://' || echo "UNKNOWN")
+            
+            # Test health endpoint
+            HEALTH_STATUS=$(gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --command="curl -s -f --max-time 10 http://localhost:8080/healthcheck" 2>/dev/null && echo "HEALTHY" || echo "UNHEALTHY")
+            
+            # Get ngrok URL if available
+            NGROK_URL=$(gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --command="curl -s http://localhost:4040/api/tunnels 2>/dev/null | jq -r '.tunnels[0].public_url // \"NOT_AVAILABLE\"'" 2>/dev/null || echo "NOT_AVAILABLE")
+            
+            echo "vm_status=$VM_STATUS" >> $GITHUB_OUTPUT
+            echo "vm_ip=$VM_IP" >> $GITHUB_OUTPUT
+            echo "container_status=$CONTAINER_STATUS" >> $GITHUB_OUTPUT
+            echo "container_image=$CONTAINER_IMAGE" >> $GITHUB_OUTPUT
+            echo "health_status=$HEALTH_STATUS" >> $GITHUB_OUTPUT
+            echo "ngrok_url=$NGROK_URL" >> $GITHUB_OUTPUT
+          else
+            echo "vm_status=$VM_STATUS" >> $GITHUB_OUTPUT
+            echo "vm_ip=N/A" >> $GITHUB_OUTPUT
+            echo "container_status=N/A" >> $GITHUB_OUTPUT
+            echo "container_image=N/A" >> $GITHUB_OUTPUT
+            echo "health_status=N/A" >> $GITHUB_OUTPUT
+            echo "ngrok_url=N/A" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate Status Report
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🚀 Merkle Oracle Node Deployment Status
+          
+          **Last Updated:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          
+          ## 🖥️ Infrastructure Status
+          
+          | Component | Status | Details |
+          |-----------|--------|---------|
+          | **VM** | ${{ steps.status.outputs.vm_status == 'RUNNING' && '🟢 RUNNING' || '🔴 ' + steps.status.outputs.vm_status }} | IP: ${{ steps.status.outputs.vm_ip }} |
+          | **Container** | ${{ steps.status.outputs.health_status == 'HEALTHY' && '🟢 HEALTHY' || '🔴 ' + steps.status.outputs.health_status }} | ${{ steps.status.outputs.container_status }} |
+          | **Image Version** | 📦 | ${{ steps.status.outputs.container_image }} |
+          
+          ## 🌐 Access Points
+          
+          | Service | URL | Status |
+          |---------|-----|--------|
+          | **HTTPS API** | ${{ steps.status.outputs.ngrok_url != 'NOT_AVAILABLE' && steps.status.outputs.ngrok_url || 'Not Available' }} | ${{ steps.status.outputs.ngrok_url != 'NOT_AVAILABLE' && '🟢 Available' || '🔴 Unavailable' }} |
+          | **HTTP API** | Disabled (Security) | 🛡️ Secured |
+          | **SSH Access** | \`gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }}\` | 🔧 Available |
+          
+          ## 📊 Quick Actions
+          
+          ### Deploy New Version
+          \`\`\`bash
+          # Trigger deployment via GitHub Actions
+          gh workflow run deploy-compute-engine.yml -f environment=staging -f tag=v1.0.0
+          \`\`\`
+          
+          ### Check Logs
+          \`\`\`bash
+          # SSH to VM and check container logs
+          gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }}
+          docker logs merkle-oracle-node -f
+          \`\`\`
+          
+          ### Health Check
+          \`\`\`bash
+          # Internal health check
+          gcloud compute ssh ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --command="curl http://localhost:8080/healthcheck"
+          \`\`\`
+          
+          ---
+          
+          ${{ steps.status.outputs.vm_status == 'RUNNING' && steps.status.outputs.health_status == 'HEALTHY' && '✅ **All systems operational**' || '⚠️ **Attention required**' }}
+          EOF
+
+      - name: Check for Issues
+        if: steps.status.outputs.vm_status != 'RUNNING' || steps.status.outputs.health_status != 'HEALTHY'
+        run: |
+          echo "::warning::Deployment issues detected:"
+          echo "::warning::VM Status: ${{ steps.status.outputs.vm_status }}"
+          echo "::warning::Health Status: ${{ steps.status.outputs.health_status }}"
+          echo "::warning::Container Status: ${{ steps.status.outputs.container_status }}"
+          
+          if [[ "${{ steps.status.outputs.vm_status }}" != "RUNNING" ]]; then
+            echo "::error::VM is not running. Check VM status in Google Cloud Console."
+          fi
+          
+          if [[ "${{ steps.status.outputs.health_status }}" != "HEALTHY" ]]; then
+            echo "::error::Application health check failed. Check container logs."
+          fi

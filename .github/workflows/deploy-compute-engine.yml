@@ -1,0 +1,128 @@
+name: "🚀 Deploy to Compute Engine"
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+  release:
+    types: [published]
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      tag:
+        description: 'Git tag to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: "palm-portal-staging"
+  REGION: "europe-west1"
+  ZONE: "europe-west1-b"
+  ARTIFACT_REGISTRY_REPO: "merkle-oracle-node"
+
+jobs:
+  deploy:
+    name: "Deploy to ${{ github.event.inputs.environment || 'staging' }}"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'release'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      
+      - name: Set deployment variables
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            ENVIRONMENT="staging"
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            ENVIRONMENT="staging"
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            INSTANCE_NAME="merkle-oracle-node"
+          else
+            INSTANCE_NAME="merkle-oracle-ubuntu"
+          fi
+
+          IMAGE_NAME="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/merkle-oracle-node"
+          IMAGE_TAG="${IMAGE_NAME}:${TAG}"
+
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "instance_name=${INSTANCE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ steps.vars.outputs.image_tag }} .
+          docker push ${{ steps.vars.outputs.image_tag }}
+      
+      - name: Setup config file
+        run: |
+          gcloud secrets versions access latest --secret="merkle-oracle-config" > /tmp/config.yaml
+
+      - name: Deploy to Compute Engine
+        run: |
+          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="
+            # Authenticate Docker
+            ACCESS_TOKEN=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | cut -d'\"' -f4)
+            echo \$ACCESS_TOKEN | docker login -u oauth2accesstoken --password-stdin https://${{ env.REGION }}-docker.pkg.dev
+
+            # Update config from Secret Manager
+            sudo systemctl start merkle-oracle-startup
+
+            # Set the new image tag for the systemd service
+            echo '${{ steps.vars.outputs.image_tag }}' | sudo tee /tmp/merkle-oracle-current-image > /dev/null
+
+            # Restart the service with new image
+            sudo systemctl restart merkle-oracle-node
+          "
+
+      - name: Cleanup old images
+        run: |
+          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="
+            docker images --filter=reference='*merkle-oracle-node*' --format '{{.ID}} {{.CreatedAt}}' | sort -k2 -r | tail -n +4 | awk '{print \$1}' | xargs -r docker rmi -f || true
+            docker image prune -f || true
+          " || true
+      
+      - name: Health check
+        run: |
+          sleep 30
+          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="curl -f -s http://localhost:8080/healthcheck" > /dev/null
+
+          echo "Deployment completed: ${{ steps.vars.outputs.tag }} on ${{ steps.vars.outputs.instance_name }}"

@@ -1,0 +1,72 @@
+storage:
+  url: "postgresql://merkle_user:MerkleUserPassword123!@10.76.208.3:5432/postgres"
+
+indexer:
+  address: ""
+  socketPath: ""
+  interceptHash: "98ea27795942886a19ae3297dc3b9c77b91dd8ede907023b4f4b972ca686a047"
+  interceptSlot: 89748664
+  txExpirationBlockNumber: 3
+  restartThreshold: 3
+  restartTimeWindow: 10m
+
+metrics:
+  listenAddress: "0.0.0.0"
+  listenPort: 9094
+
+debug:
+  listenAddress: "0.0.0.0"
+  listenPort: 9093
+
+server:
+  listenAddress: "0.0.0.0"
+  listenPort: 8080
+  defaultPageLimit: 50
+  maxPageLimit: 1000
+
+submit:
+  url: "https://cardano-preview.blockfrost.io/api/v0/tx/submit"
+  blockFrostProjectID: "previewpvyQQ8CHiiL8yPkcJXJjIeTfIDptpjgt"
+
+wallet:
+  mnemonic: "column solve key imitate change roast there found endorse pig carry cave among toast give treat void lemon loyal fun earn prison either ten"
+
+logging:
+  level: "info"
+  log_discord_webook_url: "Your Discord webhook URL"
+  notification_discord_webhook_url: "Your notification webhook URL"
+  explorer_base_uri: ""
+  log_file_name: "mainnet.log"
+  log_directory: "assets/logs"
+  max_log_file_size: 100 # MBs
+  max_backups: 3
+  max_age: 30 # days
+
+api:
+  blockfrostURL: ""
+  blockfrostApiKey: ""
+  ogmiosURL: ""
+  kupoURL: ""
+  utxorpcURL: ""
+  maestroApiKey: "pkH1Abc9dG0FiDNhhA7QHIB4dzPcC8QL"
+
+cloud:
+  gcpCredentialJSONPath: ""
+  bucketName: ""
+  pinataGatewayURL: "https://gateway.pinata.cloud"
+  pinataJWT: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI2MDY2MjU2OC0xMDNhLTRkNDUtODY5Zi01MWIxYjE4ZTlhMGEiLCJlbWFpbCI6InNhbS5sYW1iZXJ0QHplbmdhdGUuZ2xvYmFsIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImZkN2QzYWFhYTQ0MDhiMmNjNTliIiwic2NvcGVkS2V5U2VjcmV0IjoiMTM3NDgyYmIxZTgwMTY1MDVkMmFlOWRiY2IwMzFlZGE2ZDQ5ODlkY2IxOWUxYWNmODNiYzM3YjI3NWVmNGQzYSIsImV4cCI6MTc3NDA2MjU2Mn0.Yl_q-VqCS0nVzOJjBDNghquLIjYc4FGuQVe1m1QHgoA"
+
+oracle:
+  updateInterval: 10m
+  baseURL: "https://oracle-data-provider-901919715597.asia-southeast1.run.app/"
+
+profile: "oracle-preview"
+network: "preview"
+
+contract:
+  contractAddress: "addr_test1wp0z0g7grmj7pqkhdcuzyjgtsxqhf9gydsxnv05cwv40apcwamsa0"
+  singletonPolicyId: "5e27a3c81ee5e082d76e3822490b81817495046c0d363e98732afe87"
+  singletonName: "merkle_oracle_singleton"
+  merkleOracleScriptRef:
+    txId: "96b64c873ed12420fa3da1f2aeed9ed2bcafe9397103dfe9e72e00a52cc6bf25"
+    index: 1

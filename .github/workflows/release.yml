@@ -208,3 +208,30 @@ jobs:
           asset_path: dist/${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_name: ${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_content_type: application/zip
+
+  deploy:
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    needs: release
+    name: "Deploy to Staging"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deployment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            console.log(`Triggering deployment for tag: ${tag}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-compute-engine.yml',
+              ref: 'main',
+              inputs: {
+                environment: 'staging',
+                tag: tag
+              }
+            });
+
+            console.log('Deployment triggered successfully');
