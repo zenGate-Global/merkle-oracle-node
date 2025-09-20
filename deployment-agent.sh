@@ -118,6 +118,7 @@ deploy_image() {
     # Health check new container
     if ! health_check 8081; then
         log "ERROR: New container failed health check, rolling back"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [DEPLOY-AGENT] Deployment failed: New container failed health check" > /dev/console
         docker stop merkle-oracle-staging 2>/dev/null || true
         docker rm merkle-oracle-staging 2>/dev/null || true
         return 1
@@ -154,15 +155,19 @@ deploy_image() {
     sleep 3
     if ! health_check 8080; then
         log "ERROR: Final health check failed after deployment"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [DEPLOY-AGENT] Deployment failed: Final health check failed" > /dev/console
         return 1
     fi
     
     log "Zero-downtime deployment completed successfully"
-    
+
+    # Log deployment success to serial console for GitHub Actions monitoring
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [DEPLOY-AGENT] Zero-downtime deployment completed successfully for image: $new_image" > /dev/console
+
     # Clean up old images (keep last 2)
     log "Cleaning up old Docker images"
     docker images --filter "reference=europe-west1-docker.pkg.dev/palm-portal-staging/merkle-oracle-node/merkle-oracle-node" --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi 2>/dev/null || true
-    
+
     return 0
 }
 

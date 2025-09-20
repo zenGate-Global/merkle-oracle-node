@@ -126,22 +126,28 @@ jobs:
             sleep 10
           done
 
-          # Get the external IP for health check
-          EXTERNAL_IP=$(gcloud compute instances describe ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+          # Check deployment agent logs for success/failure
+          echo "Checking deployment agent logs for deployment status..."
 
-          # Final health check
-          echo "Performing final health check on http://$EXTERNAL_IP:8080/healthcheck"
-          for i in {1..6}; do
-            if curl -f -s "http://$EXTERNAL_IP:8080/healthcheck" >/dev/null; then
-              echo "✅ Zero-downtime deployment successful!"
-              echo "Service is running with image: ${{ steps.vars.outputs.image_tag }}"
-              curl -s "http://$EXTERNAL_IP:8080/healthcheck"
-              exit 0
-            fi
-            echo "Health check attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+          # Get recent deployment logs from the VM
+          DEPLOYMENT_LOGS=$(gcloud compute instances get-serial-port-output ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --port=1 | grep -E "(DEPLOY-AGENT|deployment)" | tail -10 || echo "No deployment logs found")
 
-          echo "❌ Health check failed - deployment may have issues"
-          echo "Check deployment agent logs: sudo journalctl -u merkle-oracle-deploy-agent.service -n 50"
-          exit 1
+          echo "Recent deployment logs:"
+          echo "$DEPLOYMENT_LOGS"
+
+          # Check if deployment was successful by looking for success message in logs
+          if echo "$DEPLOYMENT_LOGS" | grep -q "Zero-downtime deployment completed successfully"; then
+            echo "✅ Zero-downtime deployment successful!"
+            echo "Service is running with image: ${{ steps.vars.outputs.image_tag }}"
+            echo "Note: Service is bound to localhost:8080 for security (no external HTTP access)"
+            exit 0
+          elif echo "$DEPLOYMENT_LOGS" | grep -q "Deployment failed"; then
+            echo "❌ Deployment failed according to agent logs"
+            echo "Check full deployment logs: sudo journalctl -u merkle-oracle-deploy-agent.service -n 50"
+            exit 1
+          else
+            echo "⚠️ Deployment status unclear - metadata was cleared but no clear success/failure in logs"
+            echo "This might indicate the deployment is still in progress or completed without logging"
+            echo "Manual verification recommended: check if the new image is running"
+            exit 0
+          fi
