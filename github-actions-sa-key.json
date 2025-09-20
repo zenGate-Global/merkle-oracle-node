@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "palm-portal-staging",
+  "private_key_id": "81156c3aa8054814f6ca37a1ebe6bac87bb43c64",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDMisfQ2nhbKGxf\nJSj78JTrIcZMZrrA68hIUp0Yp+ixBSMx7L+Lmts6RcIMYS7GR+/1vbdhjLY7AJlI\nbPSDp/PyEXzOvQr5hV9N2/zypFBFWKArKimvdSA94KoZa5Yo01lH7m16ntv6nD2Z\nrv9l4sv5msLEogbf8CHhiIitUaeHju3Y4CcOHtK1eYg8LnFa5XsTgy2pNxvcmVgD\nRXDKWJ0C2kCwrbuTUvBHag9Tm+kIYxPQLRkTq0kkX7csXvSf52qNLRUEaRx1b9xV\nUoHbGiKBVB/OF3aCIFlxN+nK53kDY+MJS0zQ+hSjlJPmS1jcBeMGQNXwEFo8IyW9\nN2Mz6sKDAgMBAAECggEAHuca0FGpnHAri2Z0XjgXb7zvFkzxC0O0Q0UECh0YOWKC\n0kCoIeH4HEI80pz+MaPdu715jsnxIFHzVq9rc9a0sw50UlHabh956iwB9/DeVdPR\ngyQAH0utXtvqJyQLkEh6NTVvIfcNWjwvzF/Vo2GUGraIlae7LSs9GzODHth23LJ0\npIc6IrYWK2E8Rw+axuc02qolbLmoBFZgRhKKeE2efdZxmCNteG4Z6aAD3ciW9jW3\nxiSuAcOVLyyDCqKOpLE7QRAqHKzsW7MT5MMcR/hp0qFAS9E2Eugr6ONCf4t6nMpl\n+RKY5dszch5Ax+PIMpZtLxCi1cHzq9Jc+8NQhGnYYQKBgQD2WrGv+8u+gtnwIGOb\nhFROY/e4zZKiVO/LKhKDlsHowgiFSSl7Zs5sTxMcDJmBJlzGC1q57L62GrjJnGXl\nQbe5fcwE+gZgHq/Mb3D5UzFMUZUeqeEUiELU78EL3iSBq1cfFeZFRtJhrn8aB/8C\nKYZFvIO68J6t0U6t5XLgo2s/IwKBgQDUjPyWVNsT2X3tZTxNfky3uPgBRyuB5OJS\n/K0j9zqJm2cb8Y3aVgaEUDIYPejhginuk1ZN3qHUcYFUaJFc2RBYIBVXvV0chyou\nIE/7vLm/a5xV05+MpWeZZQ7/q5UifQjhYxXCgkefK5fjvVGmSANJA9UTSG/xbeSR\nVRCHRutVIQKBgG+y8Yv8nAXWaKCS3vb9igg9FW4Kb6kA3/T7L4fQjD1P9PMSGCfm\nlkPPmreGEvfXAAufzFQuvs3s0cpACodnQ7lsC1xaTRe58jW8dbnmeZzEBNvxZKed\nnMfVqW8LGvxcRtVGZbEVioBV0TVpWLuPPl1SO1xAi4H+PDFmrq6iCheHAoGBAKUo\nWCzICuNFoKASheUBOsOXqr3ze08XdvVc+Xx04ruCUYBZFgyNw8qUNhi4Inj4F3UW\nb31afQ0ClaftCObIk/amF29x6SP9szzcRsopP3wKNhRKuDMlY3bCHAF2Zg/CcGAS\nChp1+QkpaoC/3u4CDutxWuP86V8EMRLsskcrSDmBAoGAOkUMrtbbObRoNPA88KDh\nW/8eEEXSTM7vSiiWuIqGi3K/QfMDCstyr86ZIL1Db0PRp3FQlLwDmj1Jb5UrynqO\nvyRlwnU7GEPQvxsIU2bd0tNS1J8Bpi0PiDv/NgLI77Rwp9ZKG7ztSmd634lpjkMD\nzD2N3BonbtvRdRag2HOJehU=\n-----END PRIVATE KEY-----\n",
+  "client_email": "github-actions-deploy@palm-portal-staging.iam.gserviceaccount.com",
+  "client_id": "101499989786265876025",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/github-actions-deploy%40palm-portal-staging.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

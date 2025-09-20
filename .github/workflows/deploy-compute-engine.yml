@@ -96,75 +96,52 @@ jobs:
         run: |
           gcloud secrets versions access latest --secret="merkle-oracle-config" > /tmp/config.yaml
 
-      - name: Deploy to Compute Engine (Secure - No SSH)
+      - name: Deploy to Compute Engine (Zero-Downtime)
         run: |
-          # Create deployment script that will run on VM startup
-          cat > /tmp/deploy-script.sh << 'EOF'
-          #!/bin/bash
-          set -e
+          # Trigger zero-downtime deployment via metadata
+          echo "Triggering zero-downtime deployment of ${{ steps.vars.outputs.image_tag }}"
 
-          # Get the new image tag from metadata
-          NEW_IMAGE=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/deploy-image" || echo "")
-
-          if [ -z "$NEW_IMAGE" ]; then
-            echo "No deployment image specified in metadata"
-            exit 0
-          fi
-
-          echo "Deploying new image: $NEW_IMAGE"
-
-          # Authenticate Docker using service account
-          ACCESS_TOKEN=$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | cut -d'"' -f4)
-          echo $ACCESS_TOKEN | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
-
-          # Update config from Secret Manager
-          systemctl start merkle-oracle-startup
-
-          # Set the new image tag for the systemd service
-          echo "$NEW_IMAGE" > /tmp/merkle-oracle-current-image
-
-          # Restart the service with new image
-          systemctl restart merkle-oracle-node
-
-          # Clear the deployment metadata to prevent re-deployment
-          gcloud compute instances remove-metadata $(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/name") \
-            --zone=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/zone" | cut -d'/' -f4) \
-            --keys=deploy-image
-
-          echo "Deployment completed successfully"
-          EOF
-
-          # Upload the deployment script to the VM via metadata and trigger execution
+          # Set deployment request in instance metadata
           gcloud compute instances add-metadata ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
-            --metadata=deploy-image="${{ steps.vars.outputs.image_tag }}",deploy-script="$(cat /tmp/deploy-script.sh)"
+            --metadata=deploy-image="${{ steps.vars.outputs.image_tag }}",deploy-timestamp="$(date +%s)"
 
-          # Trigger the deployment by restarting the startup script service
-          gcloud compute instances add-metadata ${{ steps.vars.outputs.instance_name }} \
-            --zone=${{ env.ZONE }} \
-            --metadata=startup-script='#!/bin/bash
-          # Check if deployment script exists in metadata
-          DEPLOY_SCRIPT=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/deploy-script" 2>/dev/null || echo "")
-          if [ ! -z "$DEPLOY_SCRIPT" ]; then
-            echo "$DEPLOY_SCRIPT" > /tmp/deploy.sh
-            chmod +x /tmp/deploy.sh
-            /tmp/deploy.sh
-            rm -f /tmp/deploy.sh
-          fi'
+          echo "Deployment request sent. The deployment agent on the VM will handle the update without downtime."
 
-          # Reset the VM to trigger startup script execution
-          gcloud compute instances reset ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }}
-
-      - name: Cleanup old images
+      - name: Monitor deployment progress
         run: |
-          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="
-            docker images --filter=reference='*merkle-oracle-node*' --format '{{.ID}} {{.CreatedAt}}' | sort -k2 -r | tail -n +4 | awk '{print \$1}' | xargs -r docker rmi -f || true
-            docker image prune -f || true
-          " || true
-      
-      - name: Health check
-        run: |
-          sleep 30
-          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --command="curl -f -s http://localhost:8080/healthcheck" > /dev/null
+          echo "Monitoring zero-downtime deployment progress..."
 
-          echo "Deployment completed: ${{ steps.vars.outputs.tag }} on ${{ steps.vars.outputs.instance_name }}"
+          # Wait for deployment agent to process the request (up to 3 minutes)
+          for i in {1..18}; do
+            # Check if deployment metadata is still present (agent removes it when done)
+            DEPLOY_IMAGE=$(gcloud compute instances describe ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --format="value(metadata.items[key=deploy-image].value)" 2>/dev/null || echo "")
+
+            if [ -z "$DEPLOY_IMAGE" ]; then
+              echo "✅ Deployment metadata cleared - deployment completed!"
+              break
+            fi
+
+            echo "Deployment in progress... (attempt $i/18)"
+            sleep 10
+          done
+
+          # Get the external IP for health check
+          EXTERNAL_IP=$(gcloud compute instances describe ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+
+          # Final health check
+          echo "Performing final health check on http://$EXTERNAL_IP:8080/healthcheck"
+          for i in {1..6}; do
+            if curl -f -s "http://$EXTERNAL_IP:8080/healthcheck" >/dev/null; then
+              echo "✅ Zero-downtime deployment successful!"
+              echo "Service is running with image: ${{ steps.vars.outputs.image_tag }}"
+              curl -s "http://$EXTERNAL_IP:8080/healthcheck"
+              exit 0
+            fi
+            echo "Health check attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "❌ Health check failed - deployment may have issues"
+          echo "Check deployment agent logs: sudo journalctl -u merkle-oracle-deploy-agent.service -n 50"
+          exit 1
