@@ -99,8 +99,8 @@ jobs:
             --zone=${{ env.ZONE }} \
             --command="
               set -eux
-              mkdir -p /tmp/config
-              gcloud secrets versions access latest --secret='merkle-oracle-config' > /tmp/config/config.yaml
+              sudo mkdir -p /tmp/config
+              gcloud secrets versions access latest --secret='merkle-oracle-config' | sudo tee /tmp/config/config.yaml >/dev/null
               # Ensure Docker can pull from Artifact Registry with instance SA
               gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet || true
               gcloud auth print-access-token | sudo docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
