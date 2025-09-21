@@ -187,14 +187,14 @@ jobs:
               gcloud secrets versions access latest --secret='merkle-oracle-config' > /tmp/config/config.yaml
               # Ensure Docker can pull from Artifact Registry with instance SA
               gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet || true
-              gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
-              docker pull ${{ steps.vars.outputs.image_tag }}
+              gcloud auth print-access-token | sudo docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
+              sudo docker pull ${{ steps.vars.outputs.image_tag }}
               # Prepare isolated network used by ngrok and app
-              docker network create merkle-net 2>/dev/null || true
+              sudo docker network create merkle-net 2>/dev/null || true
               # Restart application container without exposing host ports
-              docker stop app 2>/dev/null || true
-              docker rm app 2>/dev/null || true
-              docker run -d \
+              sudo docker stop app 2>/dev/null || true
+              sudo docker rm app 2>/dev/null || true
+              sudo docker run -d \
                 --name app \
                 --network merkle-net \
                 --restart unless-stopped \
@@ -208,7 +208,7 @@ jobs:
           sleep 20
           CONTAINER_STATUS=$(gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
-            --command="docker ps --filter 'name=app' --format '{{.Status}}'" \
+            --command="sudo docker ps --filter 'name=app' --format '{{.Status}}'" \
             --ssh-flag="-o StrictHostKeyChecking=no" \
             --quiet 2>/dev/null || echo "not found")
 
@@ -217,7 +217,7 @@ jobs:
           else
             gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
               --zone=${{ env.ZONE }} \
-              --command="docker logs app --tail 50" \
+              --command="sudo docker logs app --tail 50" \
               --ssh-flag="-o StrictHostKeyChecking=no" \
               --quiet 2>/dev/null
             exit 1
