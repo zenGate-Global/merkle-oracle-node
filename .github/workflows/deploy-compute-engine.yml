@@ -94,60 +94,131 @@ jobs:
       
       - name: Setup config file
         run: |
-          gcloud secrets versions access latest --secret="merkle-oracle-config" > /tmp/config.yaml
-
-      - name: Deploy to Compute Engine (Zero-Downtime)
-        run: |
-          # Trigger zero-downtime deployment via metadata
-          echo "Triggering zero-downtime deployment of ${{ steps.vars.outputs.image_tag }}"
-
-          # Set deployment request in instance metadata
-          gcloud compute instances add-metadata ${{ steps.vars.outputs.instance_name }} \
-            --zone=${{ env.ZONE }} \
-            --metadata=deploy-image="${{ steps.vars.outputs.image_tag }}",deploy-timestamp="$(date +%s)"
-
-          echo "Deployment request sent. The deployment agent on the VM will handle the update without downtime."
-
-      - name: Monitor deployment progress
-        run: |
-          echo "Monitoring zero-downtime deployment progress..."
-
-          # Wait for deployment agent to process the request (up to 3 minutes)
-          for i in {1..18}; do
-            # Check if deployment metadata is still present (agent removes it when done)
-            DEPLOY_IMAGE=$(gcloud compute instances describe ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --format="value(metadata.items[key=deploy-image].value)" 2>/dev/null || echo "")
-
-            if [ -z "$DEPLOY_IMAGE" ]; then
-              echo "✅ Deployment metadata cleared - deployment completed!"
-              break
-            fi
-
-            echo "Deployment in progress... (attempt $i/18)"
-            sleep 10
-          done
-
-          # Check deployment agent logs for success/failure
-          echo "Checking deployment agent logs for deployment status..."
-
-          # Get recent deployment logs from the VM
-          DEPLOYMENT_LOGS=$(gcloud compute instances get-serial-port-output ${{ steps.vars.outputs.instance_name }} --zone=${{ env.ZONE }} --port=1 | grep -E "(DEPLOY-AGENT|deployment)" | tail -10 || echo "No deployment logs found")
-
-          echo "Recent deployment logs:"
-          echo "$DEPLOYMENT_LOGS"
-
-          # Check if deployment was successful by looking for success message in logs
-          if echo "$DEPLOYMENT_LOGS" | grep -q "Zero-downtime deployment completed successfully"; then
-            echo "✅ Zero-downtime deployment successful!"
-            echo "Service is running with image: ${{ steps.vars.outputs.image_tag }}"
-            echo "Note: Service is bound to localhost:8080 for security (no external HTTP access)"
-            exit 0
-          elif echo "$DEPLOYMENT_LOGS" | grep -q "Deployment failed"; then
-            echo "❌ Deployment failed according to agent logs"
-            echo "Check full deployment logs: sudo journalctl -u merkle-oracle-deploy-agent.service -n 50"
-            exit 1
+          # Set environment-specific variables
+          if [[ "${{ steps.vars.outputs.environment }}" == "production" ]]; then
+            NETWORK="mainnet"
+            PROFILE="oracle-mainnet"
+            EXPLORER_URI="https://cardanoscan.io/transaction/"
+            LOG_FILE="mainnet.log"
           else
-            echo "⚠️ Deployment status unclear - metadata was cleared but no clear success/failure in logs"
-            echo "This might indicate the deployment is still in progress or completed without logging"
-            echo "Manual verification recommended: check if the new image is running"
-            exit 0
+            NETWORK="preview"
+            PROFILE="oracle-preview"
+            EXPLORER_URI="https://preview.cardanoscan.io/transaction/"
+            LOG_FILE="preview.log"
+          fi
+
+          # Create complete config.yaml with ALL secrets injected securely from GitHub
+          cat > /tmp/config.yaml << EOF
+          storage:
+            url: "${{ secrets.DATABASE_URL }}"
+
+          indexer:
+            blockfrostURL: "${{ vars.BLOCKFROST_URL }}"
+            blockfrostApiKey: "${{ secrets.BLOCKFROST_API_KEY }}"
+            ogmiosURL: "${{ vars.OGMIOS_URL }}"
+            kupoURL: "${{ vars.KUPO_URL }}"
+            utxorpcURL: "${{ vars.UTXORPC_URL }}"
+            maestroApiKey: "${{ secrets.MAESTRO_API_KEY }}"
+            intercept:
+              hash: "${{ vars.INTERCEPT_HASH }}"
+              slot: ${{ vars.INTERCEPT_SLOT }}
+
+          submit:
+            url: "${{ vars.SUBMIT_URL }}"
+            blockFrostProjectID: "${{ secrets.BLOCKFROST_PROJECT_ID }}"
+
+          wallet:
+            mnemonic: "${{ secrets.WALLET_MNEMONIC }}"
+
+          logging:
+            level: "info"
+            log_discord_webook_url: ""
+            notification_discord_webhook_url: ""
+            explorer_base_uri: "${EXPLORER_URI}"
+            log_file_name: "${LOG_FILE}"
+            log_directory: "assets/logs"
+            max_log_file_size: 100
+            max_backups: 3
+            max_age: 30
+
+          api:
+            blockfrostURL: ""
+            blockfrostApiKey: ""
+            ogmiosURL: ""
+            kupoURL: ""
+            utxorpcURL: ""
+            maestroApiKey: "${{ secrets.MAESTRO_API_KEY }}"
+
+          cloud:
+            gcpCredentialJSONPath: ""
+            bucketName: ""
+            pinataGatewayURL: "${{ vars.PINATA_GATEWAY_URL }}"
+            pinataJWT: "${{ secrets.PINATA_JWT }}"
+            retryMaxAttempts: ${{ vars.CLOUD_RETRY_MAX_ATTEMPTS || 50 }}
+            retryInitialDelay: "${{ vars.CLOUD_RETRY_INITIAL_DELAY || '10s' }}"
+            retryMaxDelay: "${{ vars.CLOUD_RETRY_MAX_DELAY || '300s' }}"
+
+          oracle:
+            updateInterval: "${{ vars.ORACLE_UPDATE_INTERVAL }}"
+            baseURL: "${{ vars.ORACLE_BASE_URL }}"
+
+          profile: "${PROFILE}"
+          network: "${NETWORK}"
+
+          contract:
+            contractAddress: "${{ vars.CONTRACT_ADDRESS }}"
+            singletonPolicyId: "${{ vars.SINGLETON_POLICY_ID }}"
+            singletonName: "${{ vars.SINGLETON_NAME }}"
+            merkleOracleScriptRef:
+              txId: "96b64c873ed12420fa3da1f2aeed9ed2bcafe9397103dfe9e72e00a52cc6bf25"
+              index: 1
+          EOF
+
+          # Upload the complete config file to Secret Manager
+          gcloud secrets versions add merkle-oracle-config --data-file=/tmp/config.yaml
+
+      - name: Deploy container
+        run: |
+          gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
+            --zone=${{ env.ZONE }} \
+            --command="
+              set -eux
+              mkdir -p /tmp/config
+              gcloud secrets versions access latest --secret='merkle-oracle-config' > /tmp/config/config.yaml
+              # Ensure Docker can pull from Artifact Registry with instance SA
+              gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet || true
+              gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev
+              docker pull ${{ steps.vars.outputs.image_tag }}
+              # Prepare isolated network used by ngrok and app
+              docker network create merkle-net 2>/dev/null || true
+              # Restart application container without exposing host ports
+              docker stop app 2>/dev/null || true
+              docker rm app 2>/dev/null || true
+              docker run -d \
+                --name app \
+                --network merkle-net \
+                --restart unless-stopped \
+                -v /tmp/config/config.yaml:/etc/config/config.yaml:ro \
+                ${{ steps.vars.outputs.image_tag }}
+            " \
+            --ssh-flag="-o StrictHostKeyChecking=no"
+
+      - name: Verify deployment
+        run: |
+          sleep 20
+          CONTAINER_STATUS=$(gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
+            --zone=${{ env.ZONE }} \
+            --command="docker ps --filter 'name=app' --format '{{.Status}}'" \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --quiet 2>/dev/null || echo "not found")
+
+          if [[ "$CONTAINER_STATUS" == *"Up"* ]]; then
+            echo "Deployment successful"
+          else
+            gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
+              --zone=${{ env.ZONE }} \
+              --command="docker logs app --tail 50" \
+              --ssh-flag="-o StrictHostKeyChecking=no" \
+              --quiet 2>/dev/null
+            exit 1
           fi
