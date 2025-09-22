@@ -116,6 +116,27 @@ jobs:
                 --restart unless-stopped \
                 -v /tmp/config/config.yaml:/etc/config/config.yaml:ro \
                 ${{ steps.vars.outputs.image_tag }}
+
+              # Prepare/Run Caddy reverse proxy for HTTPS on the VM
+              sudo tee /tmp/Caddyfile >/dev/null <<'CADDY'
+              merkle-staging.zengate-dev.com {
+                encode zstd gzip
+                reverse_proxy app:8080
+              }
+              CADDY
+              sudo docker stop caddy 2>/dev/null || true
+              sudo docker rm caddy 2>/dev/null || true
+              sudo docker volume create caddy_data >/dev/null
+              sudo docker volume create caddy_config >/dev/null
+              sudo docker run -d \
+                --name caddy \
+                --network merkle-net \
+                --restart unless-stopped \
+                -p 80:80 -p 443:443 \
+                -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro \
+                -v caddy_data:/data \
+                -v caddy_config:/config \
+                caddy:2-alpine
             " \
             --ssh-flag="-o StrictHostKeyChecking=no"
 
