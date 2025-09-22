@@ -91,7 +91,29 @@ jobs:
         run: |
           docker build -t ${{ steps.vars.outputs.image_tag }} .
           docker push ${{ steps.vars.outputs.image_tag }}
-      
+
+      - name: Ensure external IP and firewall for HTTPS
+        run: |
+          set -eux
+          INSTANCE=${{ steps.vars.outputs.instance_name }}
+          ZONE=${{ env.ZONE }}
+          NET_URI=$(gcloud compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].network)')
+          NET_NAME=${NET_URI##*/}
+          EXT_IP=$(gcloud compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)' || true)
+          if [[ -z "${EXT_IP:-}" ]]; then
+            gcloud compute instances add-access-config "$INSTANCE" --zone="$ZONE" --access-config-name="external-nat" --network-interface="nic0"
+          fi
+          # Add tag for firewall targeting
+          gcloud compute instances add-tags "$INSTANCE" --zone="$ZONE" --tags=web-https --no-user-output-enabled || true
+          # Create firewall rule if missing
+          FW_RULE=allow-http-https-web-https-tag
+          gcloud compute firewall-rules describe "$FW_RULE" >/dev/null 2>&1 || \
+            gcloud compute firewall-rules create "$FW_RULE" \
+              --allow=tcp:80,tcp:443 \
+              --target-tags=web-https \
+              --direction=INGRESS \
+              --priority=1000 \
+              --network="$NET_NAME"
 
       - name: Deploy container
         run: |

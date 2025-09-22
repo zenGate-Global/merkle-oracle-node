@@ -14,45 +14,26 @@ Goal: serve the app at merkle-staging.zengate-dev.com with HTTPS, low cost, no G
   - Uses a simple Caddyfile to reverse proxy to `app:8080`
   - Automatically provisions TLS for `merkle-staging.zengate-dev.com`
 
-## One-time network + DNS steps
-You (or an admin) need to do these once in Google Cloud for public HTTPS:
+## Network + DNS
+- Automated by pipeline: assign external IP (if missing), add network tag, and create firewall rule for ports 80/443.
+- Your action: add a DNS A record pointing to the VM’s external IP.
 
-1) Give the VM an external IP (project: palm-portal-staging)
-- If the instance has no external IP, add one:
-
+Find the external IP (project: palm-portal-staging):
 ```bash
-# Assign an ephemeral external IP (no VM restart needed)
-gcloud compute instances add-access-config merkle-oracle-ubuntu \
-  --zone=europe-west1-b
-```
-
-2) Open firewall for HTTP/HTTPS to this VM
-- Allow TCP 80 and 443 inbound to the instance. Example using a network tag:
-
-```bash
-# Add a network tag to the instance (once)
-gcloud compute instances add-tags merkle-oracle-ubuntu \
+gcloud compute instances describe merkle-oracle-ubuntu \
+  --project=palm-portal-staging \
   --zone=europe-west1-b \
-  --tags=web-https
-
-# Create firewall rule targeting that tag (once)
-gcloud compute firewall-rules create allow-http-https \
-  --allow=tcp:80,tcp:443 \
-  --target-tags=web-https \
-  --direction=INGRESS \
-  --priority=1000
+  --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 ```
 
-3) Add DNS A record (project: zengate-dns-management, zone: zengate-dev)
-- Point the domain to the VM’s external IP (replace X.X.X.X):
-
+Add DNS A record (project: zengate-dns-management, zone: zengate-dev):
 ```bash
 gcloud dns record-sets create merkle-staging.zengate-dev.com. \
   --project=zengate-dns-management \
   --zone=zengate-dev \
   --type=A \
   --ttl=300 \
-  --rrdatas=X.X.X.X
+  --rrdatas=<EXTERNAL_IP>
 ```
 
 After DNS propagates and ports 80/443 are reachable, Caddy will fetch a certificate automatically, and HTTPS will work.
