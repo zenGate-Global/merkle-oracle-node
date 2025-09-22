@@ -130,16 +130,12 @@ jobs:
 
               # Prepare/Run Caddy reverse proxy for HTTPS on the VM
               sudo rm -rf /tmp/caddy && sudo mkdir -p /tmp/caddy
-              # Discover the app container IP within merkle-net (no jq required)
-              APP_IP=$(sudo docker inspect app | awk '/"merkle-net"/{f=1} f&&/"IPAddress"/{gsub(/[\",]/,""); print $2; exit}')
-              echo "Discovered APP_IP=${APP_IP}"
-              # Write Caddyfile with the resolved IP to avoid Docker DNS flakiness
-              sudo bash -lc 'cat > /tmp/caddy/Caddyfile <<EOF
+              sudo tee /tmp/caddy/Caddyfile >/dev/null <<'CADDY'
               merkle-staging.zengate-dev.com {
                 encode zstd gzip
-                reverse_proxy '"${APP_IP}"':8080
+                reverse_proxy app:8080
               }
-              EOF'
+              CADDY
               sudo docker stop caddy 2>/dev/null || true
               sudo docker rm caddy 2>/dev/null || true
               sudo docker volume create caddy_data >/dev/null
