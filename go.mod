@@ -12,7 +12,7 @@ require (
 	github.com/bdpiprava/scalar-go v0.12.1
 	github.com/blinklabs-io/adder v0.32.1
 	github.com/blinklabs-io/bursa v0.11.1
-	github.com/blinklabs-io/gouroboros v0.133.0
+	github.com/blinklabs-io/gouroboros v0.135.2
 	github.com/blinklabs-io/merkle-patricia-forestry v0.1.5
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
@@ -33,7 +33,7 @@ require (
 	github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20250811042717-4d037378a6df
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.41.0
+	golang.org/x/crypto v0.42.0
 	google.golang.org/api v0.248.0
 	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/driver/postgres v1.6.0
@@ -48,7 +48,7 @@ require (
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
-	github.com/consensys/gnark-crypto v0.18.0 // indirect
+	github.com/consensys/gnark-crypto v0.19.0 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
@@ -81,8 +81,8 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	golang.org/x/arch v0.15.0 // indirect
-	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/tools v0.35.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 )
 
@@ -106,7 +106,7 @@ require (
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.1.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/blinklabs-io/plutigo v0.0.7 // indirect
+	github.com/blinklabs-io/plutigo v0.0.12 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
@@ -161,10 +161,10 @@ require (
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/term v0.34.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/term v0.35.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c // indirect
