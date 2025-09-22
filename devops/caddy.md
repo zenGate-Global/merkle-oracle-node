@@ -37,8 +37,3 @@ gcloud dns record-sets create merkle-staging.zengate-dev.com. \
 ```
 
 After DNS propagates and ports 80/443 are reachable, Caddy will fetch a certificate automatically, and HTTPS will work.
-
-Notes
-- Keep ngrok running if you want a fallback URL during DNS propagation.
-- This keeps costs minimal: only a single VM; no external load balancer.
-
