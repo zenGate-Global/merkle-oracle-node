@@ -129,7 +129,8 @@ jobs:
                 ${{ steps.vars.outputs.image_tag }}
 
               # Prepare/Run Caddy reverse proxy for HTTPS on the VM
-              sudo tee /tmp/Caddyfile >/dev/null <<'CADDY'
+              sudo rm -rf /tmp/caddy && sudo mkdir -p /tmp/caddy
+              sudo tee /tmp/caddy/Caddyfile >/dev/null <<'CADDY'
               merkle-staging.zengate-dev.com {
                 encode zstd gzip
                 reverse_proxy app:8080
@@ -144,7 +145,7 @@ jobs:
                 --network merkle-net \
                 --restart unless-stopped \
                 -p 80:80 -p 443:443 \
-                -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro \
+                -v /tmp/caddy:/etc/caddy:ro \\
                 -v caddy_data:/data \
                 -v caddy_config:/config \
                 caddy:2-alpine
