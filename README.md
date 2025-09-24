@@ -31,6 +31,14 @@ The node also exposes a comprehensive RESTful API, allowing users and applicatio
 ![Architecture Diagram](./imgs/architecture-diagram.png)
 
 ## Getting Started
+## Staging URL (HTTPS)
+
+- The VM runs a lightweight Caddy reverse proxy to serve HTTPS for merkle-staging.zengate-dev.com.
+- The pipeline ensures the VM has an external IP and opens ports 80/443 automatically.
+- Your only action is to add a DNS A record pointing the domain to the VM’s external IP in Cloud DNS (project: zengate-dns-management, zone: zengate-dev).
+- See devops/caddy.md for the 1-step DNS command and details.
+
+
 
 ## Related Repositories
 

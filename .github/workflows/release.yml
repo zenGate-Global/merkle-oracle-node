@@ -1,11 +1,7 @@
 name: "📦 Build"
 on:
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
   push:
-    tags: ["v*.*.*"] # Ex. v0.1.0, v0.1.1-rc2
+    tags: ["v*.*.*"]
 
 permissions:
   contents: write
@@ -207,3 +203,5 @@ jobs:
           asset_path: dist/${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_name: ${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_content_type: application/zip
+
+
