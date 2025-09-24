@@ -315,6 +315,7 @@ func (a *IndexerActor) handleNewBlockEvent(evt event.Event) {
 	if a.downstreamPID != nil {
 		emissionBlockEvent := types.IndexerBlockEvent{
 			BlockEvent: blockEvent,
+			Timestamp:  evt.Timestamp,
 			TipReached: a.tipReached,
 		}
 		a.engine.Send(a.downstreamPID, emissionBlockEvent)

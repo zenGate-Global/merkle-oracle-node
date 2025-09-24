@@ -33,6 +33,8 @@ import (
 	apolloTxInput "github.com/Salvionied/apollo/serialization/TransactionInput"
 	apolloTxOutput "github.com/Salvionied/apollo/serialization/TransactionOutput"
 	apolloUTxO "github.com/Salvionied/apollo/serialization/UTxO"
+
+	input_chainsync "github.com/blinklabs-io/adder/input/chainsync"
 )
 
 type trieLike interface {
@@ -84,29 +86,53 @@ func retryWithExponentialBackoff(
 		result, err := operation()
 		if err == nil {
 			if attempt > 1 {
-				logger.Infof("[%s] Succeeded on attempt %d/%d", operationName, attempt, maxAttempts)
+				logger.Infof(
+					"[%s] Succeeded on attempt %d/%d",
+					operationName,
+					attempt,
+					maxAttempts,
+				)
 			}
 			return result, nil
 		}
 
 		lastErr = err
-		logger.Warnf("[%s] Attempt %d/%d failed: %v", operationName, attempt, maxAttempts, err)
+		logger.Warnf(
+			"[%s] Attempt %d/%d failed: %v",
+			operationName,
+			attempt,
+			maxAttempts,
+			err,
+		)
 
 		if attempt == maxAttempts {
 			break
 		}
 
-		delay := time.Duration(float64(initialDelay) * math.Pow(2, float64(attempt-1)))
+		delay := time.Duration(
+			float64(initialDelay) * math.Pow(2, float64(attempt-1)),
+		)
 
 		if delay > maxDelay {
 			delay = maxDelay
 		}
 
-		logger.Infof("[%s] Waiting %v before retry %d/%d", operationName, delay, attempt+1, maxAttempts)
+		logger.Infof(
+			"[%s] Waiting %v before retry %d/%d",
+			operationName,
+			delay,
+			attempt+1,
+			maxAttempts,
+		)
 		time.Sleep(delay)
 	}
 
-	return nil, fmt.Errorf("[%s] failed after %d attempts, last error: %v", operationName, maxAttempts, lastErr)
+	return nil, fmt.Errorf(
+		"[%s] failed after %d attempts, last error: %v",
+		operationName,
+		maxAttempts,
+		lastErr,
+	)
 }
 
 type ValidationReport struct {
@@ -568,6 +594,13 @@ func (s *ChainEventProcessorActor) garbageCollectOldBlocks(cutoffSlot uint64) {
 		}
 	}
 
+	// should not be needed, but incase block key not found in `cnt, ok := s.blockTransactionCountMap[blockKey]`
+	for bk := range s.blockTransactionCountMap {
+		if bk.SlotNumber < cutoffSlot {
+			delete(s.blockTransactionCountMap, bk)
+		}
+	}
+
 	if len(removedBlocks) > 0 {
 		s.logger.Debugf(
 			"Garbage collected %d old processed blocks (cutoff slot: %d)",
@@ -639,6 +672,24 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 			s.justStarted = false
 		}
 
+		if msg.BlockEvent.TransactionCount == 0 {
+			blockHash := msg.BlockEvent.Block.Hash().String()
+			if bh, err := hex.DecodeString(blockHash); err != nil {
+				s.logger.Warnw("failed to decode block hash for cursor update (zero-tx block)", "hash", blockHash, "err", err)
+			} else {
+				if err := s.db.AddCursorPoint(common.Point{
+					Hash: bh,
+					Slot: msg.BlockEvent.Block.SlotNumber(),
+				}); err != nil {
+					s.logger.Errorf("failed to update cursor for zero-tx block: %v", err)
+				}
+			}
+
+			delete(s.blockTransactionCountMap, blockKey)
+
+			s.finalizeZeroTxBlock(msg)
+		}
+
 		if msg.TipReached {
 			s.logger.Debug("tip reached, block #%d", msg.BlockEvent.Block.BlockNumber())
 		}
@@ -667,7 +718,15 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 				msg.EventTransaction.BlockHash,
 				msg.EventContext.SlotNumber,
 			)
-			if cnt := s.blockTransactionCountMap[blockKey]; cnt <= 1 {
+
+			cnt, ok := s.blockTransactionCountMap[blockKey]
+			if !ok {
+				// this should never happen
+				s.logger.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+				return fmt.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+			}
+
+			if cnt <= 1 {
 				delete(s.blockTransactionCountMap, blockKey)
 				blockHash, _ := hex.DecodeString(msg.EventTransaction.BlockHash)
 				if err := s.db.AddCursorPoint(common.Point{
@@ -676,10 +735,8 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 				}); err != nil {
 					s.logger.Errorf("failed to update cursor: %v", err)
 				}
-			} else if cnt > 1 {
-				s.blockTransactionCountMap[blockKey] = cnt - 1
 			} else {
-				s.logger.Errorf("block transaction count not found for block %d (hash: %s)", msg.EventContext.BlockNumber, msg.EventTransaction.BlockHash)
+				s.blockTransactionCountMap[blockKey] = cnt - 1
 			}
 
 			// build after all block transactions are processed to make sure we build with updated trie WRT the utxo being consumed
@@ -1593,6 +1650,22 @@ func (s *ChainEventProcessorActor) processRollbackEvent(
 		}
 	}
 
+	// handle any forked blocks at rollback slot
+
+	for bk := range s.processedBlockMap {
+		if bk.SlotNumber == rollbackEvent.SlotNumber &&
+			bk.BlockHash != rollbackEvent.BlockHash {
+			delete(s.processedBlockMap, bk)
+		}
+	}
+
+	for bk := range s.blockTransactionCountMap {
+		if bk.SlotNumber == rollbackEvent.SlotNumber &&
+			bk.BlockHash != rollbackEvent.BlockHash {
+			delete(s.blockTransactionCountMap, bk)
+		}
+	}
+
 	if len(deletedBlocks) > 0 {
 		s.logger.Debugf(
 			"Removed %d processed block entries for blocks with slot > %d",
@@ -1653,4 +1726,33 @@ func (s *ChainEventProcessorActor) triggerIndexerRestart(
 	} else {
 		s.logger.Error("cannot trigger indexer restart: engine or parent PID not available")
 	}
+}
+
+func (s *ChainEventProcessorActor) finalizeZeroTxBlock(
+	msg types.IndexerBlockEvent,
+) {
+	blockNumber := msg.BlockEvent.Block.BlockNumber()
+	slotNumber := msg.BlockEvent.Block.SlotNumber()
+	blockHash := msg.BlockEvent.Block.Hash().String()
+
+	mockedTransactionEvent := types.IndexerTransactionEvent{
+		EventContext: input_chainsync.TransactionContext{
+			BlockNumber: blockNumber,
+			SlotNumber:  slotNumber,
+		},
+		EventTransaction: input_chainsync.TransactionEvent{
+			BlockHash: blockHash,
+		},
+		EventTimestamp: msg.Timestamp,
+		TipReached:     msg.TipReached,
+	}
+
+	s.withGuard(slotNumber, "ZeroTxBlockFinalize", func() error {
+		if err := s.processBlockEvent(mockedTransactionEvent); err != nil {
+			return fmt.Errorf("finalize zero-tx block: %w", err)
+		}
+		s.lastSuccessfullyIndexedSlot = slotNumber
+		s.lastSucessfullyIndexedBlockHash = mockedTransactionEvent.EventTransaction.BlockHash
+		return nil
+	})
 }
