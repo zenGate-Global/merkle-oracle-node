@@ -60,9 +60,9 @@ jobs:
           fi
 
           if [[ "$ENVIRONMENT" == "production" ]]; then
-            INSTANCE_NAME="merkle-oracle-node"
+            INSTANCE_NAME="merkle-oracle-production"
           else
-            INSTANCE_NAME="merkle-oracle-ubuntu"
+            INSTANCE_NAME="merkle-oracle-node"
           fi
 
           IMAGE_NAME="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/merkle-oracle-node"
