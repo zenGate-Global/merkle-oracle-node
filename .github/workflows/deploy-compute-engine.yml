@@ -171,3 +171,10 @@ jobs:
               --quiet 2>/dev/null
             exit 1
           fi
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          echo "Cleaning up SSH keys from project metadata..."
+          gcloud compute project-info remove-metadata --keys=ssh-keys --quiet || true
+          echo "SSH keys cleanup completed"
