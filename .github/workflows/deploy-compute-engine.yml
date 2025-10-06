@@ -130,12 +130,12 @@ jobs:
 
               # Prepare/Run Caddy reverse proxy for HTTPS on the VM
               sudo rm -rf /tmp/caddy && sudo mkdir -p /tmp/caddy
-              sudo tee /tmp/caddy/Caddyfile >/dev/null <<'CADDY'
+              sudo tee /tmp/caddy/Caddyfile >/dev/null <<'EOF'
               merkle-staging.zengate-dev.com {
                 encode zstd gzip
                 reverse_proxy app:8080
               }
-              CADDY
+              EOF
               sudo docker stop caddy 2>/dev/null || true
               sudo docker rm caddy 2>/dev/null || true
               sudo docker volume create caddy_data >/dev/null
