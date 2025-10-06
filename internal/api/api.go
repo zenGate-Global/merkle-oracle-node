@@ -45,6 +45,12 @@ func generateScalarDocs() {
 			scalargo.WithTitle("Merkle Oracle Node API"),
 		),
 		scalargo.WithLayout(scalargo.LayoutClassic),
+		scalargo.WithServers(
+			scalargo.Server{
+				URL:         "https://merkle-staging.zengate-dev.com",
+				Description: "Staging Server",
+			},
+		),
 	)
 
 	if err != nil {
