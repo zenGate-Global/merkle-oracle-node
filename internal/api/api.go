@@ -36,13 +36,10 @@ var scalarHTMLGenerationErr error
 
 func generateScalarDocs() {
 
-	specDir := "./docs"
-
-	baseFileName := "swagger.json"
+	specURL := "/docs/swagger.json"
 
 	htmlContent, err := scalargo.NewV2(
-		scalargo.WithSpecDir(specDir),
-		scalargo.WithBaseFileName(baseFileName),
+		scalargo.WithSpecURL(specURL),
 		scalargo.WithTheme(scalargo.ThemeBluePlanet),
 		scalargo.WithMetaDataOpts(
 			scalargo.WithTitle("Merkle Oracle Node API"),
@@ -127,6 +124,11 @@ func Start(
 			return
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", scalarHTML)
+	})
+
+	// Serve swagger.json for API documentation
+	router.GET("/docs/swagger.json", func(c *gin.Context) {
+		c.File("./docs/swagger.json")
 	})
 
 	serverAddr := fmt.Sprintf("%s:%d",
