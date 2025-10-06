@@ -108,7 +108,7 @@ jobs:
         run: |
           gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
-            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
             --command="
               set -eux
               sudo mkdir -p /tmp/config
@@ -157,7 +157,7 @@ jobs:
           sleep 20
           CONTAINER_STATUS=$(gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
-            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
             --command="sudo docker ps --filter 'name=app' --format '{{.Status}}'" \
             --quiet 2>/dev/null || echo "not found")
 
@@ -166,7 +166,7 @@ jobs:
           else
             gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
               --zone=${{ env.ZONE }} \
-              --tunnel-through-iap \
+              --ssh-flag="-o StrictHostKeyChecking=no" \
               --command="sudo docker logs app --tail 50" \
               --quiet 2>/dev/null
             exit 1
