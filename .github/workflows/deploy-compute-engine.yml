@@ -108,6 +108,7 @@ jobs:
         run: |
           gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
+            --tunnel-through-iap \
             --command="
               set -eux
               sudo mkdir -p /tmp/config
@@ -149,16 +150,15 @@ jobs:
                 -v caddy_data:/data \
                 -v caddy_config:/config \
                 caddy:2-alpine
-            " \
-            --ssh-flag="-o StrictHostKeyChecking=no"
+            "
 
       - name: Verify deployment
         run: |
           sleep 20
           CONTAINER_STATUS=$(gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
             --zone=${{ env.ZONE }} \
+            --tunnel-through-iap \
             --command="sudo docker ps --filter 'name=app' --format '{{.Status}}'" \
-            --ssh-flag="-o StrictHostKeyChecking=no" \
             --quiet 2>/dev/null || echo "not found")
 
           if [[ "$CONTAINER_STATUS" == *"Up"* ]]; then
@@ -166,15 +166,8 @@ jobs:
           else
             gcloud compute ssh ${{ steps.vars.outputs.instance_name }} \
               --zone=${{ env.ZONE }} \
+              --tunnel-through-iap \
               --command="sudo docker logs app --tail 50" \
-              --ssh-flag="-o StrictHostKeyChecking=no" \
               --quiet 2>/dev/null
             exit 1
           fi
-
-      - name: Cleanup SSH keys
-        if: always()
-        run: |
-          echo "Cleaning up SSH keys from project metadata..."
-          gcloud compute project-info remove-metadata --keys=ssh-keys --quiet || true
-          echo "SSH keys cleanup completed"
