@@ -1,14 +1,11 @@
-name: Deploy to GCP
+name: Deploy to GCP Staging
 
 on:
-  push:
-    branches:
-      - deploy-gcloud-v2
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker image tag to deploy (optional, uses SHA if not provided)'
-        required: false
+        description: 'Docker image tag to deploy (e.g., v1.0.0)'
+        required: true
         type: string
 
 env:
@@ -20,20 +17,23 @@ env:
   DOMAIN: merkle-oracle.zengate-dev.com
 
 jobs:
-  deploy:
-    name: Deploy to GCP
+  build:
+    name: Build and Push Image
     runs-on: ubuntu-latest
     environment: staging
     
     permissions:
       contents: read
-      id-token: write  # Required for Workload Identity Federation
+      id-token: write
+    
+    outputs:
+      image: ${{ steps.image-info.outputs.image }}
+      tag: ${{ steps.image-info.outputs.tag }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Use Workload Identity Federation (no service account keys needed!)
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -47,152 +47,251 @@ jobs:
         run: |
           set -euo pipefail
           gcloud auth configure-docker $REGION-docker.pkg.dev
-
-      - name: Set image tag
-        id: set-tag
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${{ github.sha }}"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Using tag: $TAG"
+          echo "✅ Docker authentication configured"
 
       - name: Build Docker image
         run: |
           set -euo pipefail
-          TAG="${{ steps.set-tag.outputs.tag }}"
+          TAG="${{ github.event.inputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
+          
+          echo "🔨 Building image: $IMAGE:$TAG"
           docker build -t $IMAGE:$TAG .
           docker tag $IMAGE:$TAG $IMAGE:latest
+          echo "✅ Image built successfully"
 
       - name: Push Docker image to Artifact Registry
         run: |
           set -euo pipefail
-          TAG="${{ steps.set-tag.outputs.tag }}"
+          TAG="${{ github.event.inputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
+          
+          echo "📦 Pushing image: $IMAGE:$TAG"
           docker push $IMAGE:$TAG
           docker push $IMAGE:latest
-          echo "✅ Image pushed: $IMAGE:$TAG"
+          echo "✅ Image pushed successfully"
 
-      - name: Update container image
+      - name: Set image info for next jobs
+        id: image-info
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy to Instance
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Update container on instance
         run: |
           set -euo pipefail
-          TAG="${{ steps.set-tag.outputs.tag }}"
-          IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME:$TAG"
+          IMAGE="${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }}"
+          
+          echo "🚀 Deploying image: $IMAGE"
+          echo "📍 Instance: $INSTANCE_NAME"
           
           gcloud compute instances update-container $INSTANCE_NAME \
             --zone=$ZONE \
             --container-image=$IMAGE \
             --container-restart-policy=always
           
-          echo "✅ Container image updated to: $TAG"
+          echo "✅ Container updated successfully"
 
-      - name: Wait for application to start
+      - name: Wait for container restart
         run: |
-          echo "Waiting for application to start..."
-          sleep 30
+          echo "⏳ Waiting for container to restart..."
+          sleep 45
+          echo "✅ Wait complete"
+
+  verify:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    environment: staging
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Verify application health
         run: |
           set -euo pipefail
           
-          # Single SSH session to check everything
+          echo "🔍 Checking application health..."
+          
           gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="
             set -e
             
+            echo '🔍 Checking container status...'
+            
             # Wait for container to be ready (max 5 minutes)
             for i in {1..30}; do
-              if docker ps | grep -q $IMAGE_NAME && \
-                 curl -f -s --max-time 5 http://localhost:8080/healthcheck > /dev/null 2>&1; then
-                echo 'Application is healthy'
-                exit 0
+              if docker ps | grep -q $IMAGE_NAME; then
+                echo '✅ Container is running'
+                
+                # Check if API is responding
+                if curl -f -s --max-time 5 http://localhost:8080/healthcheck > /dev/null 2>&1; then
+                  echo '✅ Application is healthy'
+                  exit 0
+                fi
               fi
-              echo \"Waiting for application (\\\$i/30)...\"
+              echo \"⏳ Waiting for application (\$i/30)...\"
               sleep 10
             done
             
-            # If we get here, health check failed
-            echo 'Application health check failed'
+            # Health check failed
+            echo '❌ Application health check failed'
+            echo ''
             echo 'Container status:'
             docker ps -a
             echo ''
             echo 'Application logs:'
-            docker logs \\\$(docker ps -aq --filter name=$IMAGE_NAME) --tail 50 || true
+            docker logs \$(docker ps -aq --filter name=$IMAGE_NAME) --tail 50 || true
             exit 1
           "
 
-      - name: Verify Caddy and HTTPS
+      - name: Verify Caddy proxy
         run: |
           set -euo pipefail
           
+          echo "🔍 Checking Caddy proxy..."
+          
           # Check Caddy container
-          if ! gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="docker ps | grep -q merkle-caddy" > /dev/null 2>&1; then
+          if gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="docker ps | grep -q merkle-caddy" > /dev/null 2>&1; then
+            echo "✅ Caddy container is running"
+          else
             echo "⚠️  Caddy container is not running"
             gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="docker ps -a | grep caddy && docker logs merkle-caddy --tail 50" 2>&1 || true
-          else
-            echo "✅ Caddy container is running"
+            exit 1
           fi
+
+      - name: Verify HTTPS endpoints
+        run: |
+          set -euo pipefail
           
-          # Check HTTPS endpoint
+          echo "🔍 Checking HTTPS endpoints..."
+          
+          # Check HTTPS health endpoint
           for i in {1..20}; do
             if curl -f -s --max-time 10 https://$DOMAIN/healthcheck > /dev/null 2>&1; then
-              echo "✅ HTTPS endpoint is accessible"
-              curl -f -s --max-time 10 https://$DOMAIN/objects?limit=1 > /dev/null 2>&1 && echo "✅ API endpoint is accessible"
-              break
+              echo "✅ HTTPS health endpoint is accessible"
+              
+              # Check API endpoint
+              if curl -f -s --max-time 10 https://$DOMAIN/objects?limit=1 > /dev/null 2>&1; then
+                echo "✅ HTTPS API endpoint is accessible"
+              fi
+              
+              exit 0
             fi
-            [ $i -eq 20 ] && echo "⚠️  HTTPS not accessible yet (may need SSL cert provisioning)" && gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="docker logs merkle-caddy --tail 30" 2>&1 || true
+            
+            if [ $i -eq 20 ]; then
+              echo "❌ HTTPS endpoints not accessible"
+              gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --tunnel-through-iap --quiet --command="docker logs merkle-caddy --tail 30" 2>&1 || true
+              exit 1
+            fi
+            
+            echo "⏳ Waiting for HTTPS ($i/20)..."
             sleep 15
           done
 
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [build, deploy, verify]
+    if: always()
+    
+    steps:
       - name: Create deployment summary
-        if: always()
         run: |
-          set +e  # Don't fail on errors in summary
+          TAG="${{ needs.build.outputs.tag }}"
+          IMAGE="${{ needs.build.outputs.image }}:$TAG"
           
-          TAG="${{ steps.set-tag.outputs.tag }}"
-          IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME:$TAG"
+          # Determine overall status
+          BUILD_STATUS="${{ needs.build.result }}"
+          DEPLOY_STATUS="${{ needs.deploy.result }}"
+          VERIFY_STATUS="${{ needs.verify.result }}"
           
-          # Get deployment status
-          DEPLOY_STATUS="${{ job.status }}"
-          if [ "$DEPLOY_STATUS" = "success" ]; then
-            STATUS_EMOJI="✅"
+          if [ "$BUILD_STATUS" = "success" ] && [ "$DEPLOY_STATUS" = "success" ] && [ "$VERIFY_STATUS" = "success" ]; then
+            OVERALL_STATUS="✅ SUCCESS"
+            STATUS_COLOR="🟢"
           else
-            STATUS_EMOJI="❌"
+            OVERALL_STATUS="❌ FAILED"
+            STATUS_COLOR="🔴"
           fi
           
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          ## $STATUS_EMOJI Deployment Summary
+          # $STATUS_COLOR Deployment Summary
           
-          **Status**: $DEPLOY_STATUS
+          ## Overall Status: $OVERALL_STATUS
           
-          **Deployment Info**
-          - Instance: \`$INSTANCE_NAME\`
-          - Zone: \`$ZONE\`
-          - Image: \`$IMAGE\`
-          - Domain: \`$DOMAIN\`
+          ### Job Results
+          - **Build**: $BUILD_STATUS
+          - **Deploy**: $DEPLOY_STATUS
+          - **Verify**: $VERIFY_STATUS
           
-          **Endpoints**
-          - Health: https://$DOMAIN/healthcheck
-          - Objects: https://$DOMAIN/objects
-          - API Docs: https://$DOMAIN/docs
+          ### Deployment Details
+          - **Instance**: \`$INSTANCE_NAME\`
+          - **Zone**: \`$ZONE\`
+          - **Image**: \`$IMAGE\`
+          - **Tag**: \`$TAG\`
+          - **Domain**: \`$DOMAIN\`
           
-          **Quick Commands**
+          ### Endpoints
+          - 🏥 Health: https://$DOMAIN/healthcheck
+          - 📦 Objects: https://$DOMAIN/objects
+          - 📚 API Docs: https://$DOMAIN/docs
+          
+          ### Quick Commands
           \`\`\`bash
           # Check health
           curl https://$DOMAIN/healthcheck
           
-          # View logs
-          gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --command="sudo docker logs merkle-oracle-node --tail 50"
+          # View application logs
+          gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --command="docker logs merkle-oracle-node --tail 50"
+          
+          # View Caddy logs
+          gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --command="docker logs merkle-caddy --tail 50"
           
           # SSH to instance
           gcloud compute ssh $INSTANCE_NAME --zone=$ZONE
           \`\`\`
+          
+          ### Workflow Run
+          - **Run ID**: ${{ github.run_id }}
+          - **Triggered by**: ${{ github.actor }}
+          - **Repository**: ${{ github.repository }}
           EOF
 
       - name: Notify on failure
-        if: failure()
+        if: needs.build.result == 'failure' || needs.deploy.result == 'failure' || needs.verify.result == 'failure'
         run: |
           echo "❌ Deployment failed"
-          echo "Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "📋 Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          exit 1

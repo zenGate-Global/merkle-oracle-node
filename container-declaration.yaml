@@ -1,0 +1,18 @@
+spec:
+  containers:
+  - name: merkle-oracle-node
+    image: europe-west1-docker.pkg.dev/palm-portal-staging/merkle-oracle-node/merkle-oracle-node:latest
+    args: []
+    stdin: false
+    tty: false
+    securityContext:
+      privileged: false
+    volumeMounts:
+    - name: host-path-0
+      mountPath: /etc/config
+      readOnly: true
+  restartPolicy: Always
+  volumes:
+  - name: host-path-0
+    hostPath:
+      path: /mnt/stateful_partition/config
