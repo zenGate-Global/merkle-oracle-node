@@ -1,12 +1,16 @@
 name: Deploy to GCP Staging
 
 on:
+  push:
+    branches:
+      - deploy-gcloud
   workflow_dispatch:
     inputs:
       tag:
         description: 'Docker image tag to deploy (e.g., v1.0.0)'
-        required: true
+        required: false
         type: string
+        default: 'v1.1.0'
 
 env:
   PROJECT_ID: palm-portal-staging
@@ -51,7 +55,7 @@ jobs:
       - name: Build Docker image
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ github.event.inputs.tag || 'v1.1.0' }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
           
           docker build -t $IMAGE:$TAG .
@@ -60,7 +64,7 @@ jobs:
       - name: Push Docker image to Artifact Registry
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ github.event.inputs.tag || 'v1.1.0' }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
           
           docker push $IMAGE:$TAG
@@ -69,7 +73,7 @@ jobs:
       - name: Set image info for next jobs
         id: image-info
         run: |
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ github.event.inputs.tag || 'v1.1.0' }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
