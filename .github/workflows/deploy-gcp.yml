@@ -1,11 +1,14 @@
 name: Deploy to GCP
 
 on:
+  push:
+    branches:
+      - deploy-gcloud-v2
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker image tag to deploy'
-        required: true
+        description: 'Docker image tag to deploy (optional, uses SHA if not provided)'
+        required: false
         type: string
 
 env:
@@ -45,10 +48,21 @@ jobs:
           set -euo pipefail
           gcloud auth configure-docker $REGION-docker.pkg.dev
 
+      - name: Set image tag
+        id: set-tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
       - name: Build Docker image
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ steps.set-tag.outputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
           docker build -t $IMAGE:$TAG .
           docker tag $IMAGE:$TAG $IMAGE:latest
@@ -56,7 +70,7 @@ jobs:
       - name: Push Docker image to Artifact Registry
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ steps.set-tag.outputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME"
           docker push $IMAGE:$TAG
           docker push $IMAGE:latest
@@ -65,7 +79,7 @@ jobs:
       - name: Update container image
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ steps.set-tag.outputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME:$TAG"
           
           gcloud compute instances update-container $INSTANCE_NAME \
@@ -137,7 +151,7 @@ jobs:
         run: |
           set +e  # Don't fail on errors in summary
           
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="${{ steps.set-tag.outputs.tag }}"
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/$IMAGE_NAME:$TAG"
           
           # Get deployment status
