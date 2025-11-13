@@ -47,7 +47,7 @@ func generateScalarDocs() {
 		scalargo.WithLayout(scalargo.LayoutClassic),
 		scalargo.WithServers(
 			scalargo.Server{
-				URL:         "https://merkle-staging.zengate-dev.com",
+				URL:         "https://merkle-oracle.zengate-dev.com",
 				Description: "Staging Server",
 			},
 		),
