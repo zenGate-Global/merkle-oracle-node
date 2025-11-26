@@ -2,9 +2,28 @@
 
 # Startup script for merkle-oracle-node COS instance
 # This script:
-# 1. Creates required directories
-# 2. Fetches config from Secret Manager
-# 3. Manages Caddy container
+# 1. Configures Docker daemon for Cloud Logging
+# 2. Creates required directories
+# 3. Fetches config from Secret Manager
+# 4. Manages Caddy container
+
+# Configure Docker daemon to use gcplogs by default
+cat > /etc/docker/daemon.json << 'EOF'
+{
+        "live-restore": true,
+        "log-driver": "gcplogs",
+        "log-opts": {
+                "gcp-log-cmd": "true",
+                "labels": "container_name"
+        },
+        "storage-driver": "overlay2",
+        "mtu": 1460
+}
+EOF
+
+# Restart Docker to apply logging configuration
+systemctl restart docker
+echo "Docker configured for Cloud Logging"
 
 # Create required directories
 mkdir -p /mnt/stateful_partition/config
@@ -130,4 +149,3 @@ if ! docker ps | grep -q merkle-caddy; then
     -v /mnt/stateful_partition/caddy/logs:/var/log/caddy \
     caddy:2-alpine
 fi
-
