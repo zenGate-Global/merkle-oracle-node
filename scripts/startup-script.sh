@@ -12,6 +12,18 @@ mkdir -p /mnt/stateful_partition/caddy/data
 mkdir -p /mnt/stateful_partition/caddy/config
 mkdir -p /mnt/stateful_partition/caddy/logs
 
+
+SWAPFILE="/mnt/stateful_partition/swapfile"
+if [ ! -f $SWAPFILE ]; then
+    echo "Creating 4GB swap file..."
+    fallocate -l 4G $SWAPFILE
+    chmod 600 $SWAPFILE
+    mkswap $SWAPFILE
+fi
+swapon $SWAPFILE
+echo "Swap enabled."
+
+
 # Fetch config from Secret Manager using Python
 python3 << 'PYTHON_SCRIPT'
 import urllib.request
@@ -108,9 +120,14 @@ if ! docker ps | grep -q merkle-caddy; then
     --name merkle-caddy \
     --restart unless-stopped \
     --network host \
+    --log-driver=gcplogs \
+    --log-opt gcp-log-cmd=true \
+    --log-opt labels=container_name \
+    --log-opt env=ENVIRONMENT \
     -v /mnt/stateful_partition/caddy/Caddyfile:/etc/caddy/Caddyfile \
     -v /mnt/stateful_partition/caddy/data:/data \
     -v /mnt/stateful_partition/caddy/config:/config \
     -v /mnt/stateful_partition/caddy/logs:/var/log/caddy \
     caddy:2-alpine
 fi
+

@@ -102,7 +102,9 @@ jobs:
           gcloud compute instances update-container $INSTANCE_NAME \
             --zone=$ZONE \
             --container-image=$IMAGE \
-            --container-restart-policy=always
+            --container-restart-policy=always \
+            --container-log-driver=gcplogs \
+            --container-arg="gcp-log-cmd=true"
 
       - name: Wait for container restart
         run: sleep 45
