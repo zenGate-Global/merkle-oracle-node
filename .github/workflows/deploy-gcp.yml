@@ -9,12 +9,12 @@ on:
         type: string
 
 env:
-  PROJECT_ID: palm-portal-staging
-  REGION: europe-west1
-  ZONE: europe-west1-b
-  INSTANCE_NAME: merkle-oracle-staging
-  IMAGE_NAME: merkle-oracle-node
-  DOMAIN: merkle-oracle.zengate-dev.com
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  REGION: ${{ vars.REGION }}
+  ZONE: ${{ vars.ZONE }}
+  INSTANCE_NAME: ${{ vars.INSTANCE_NAME }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  DOMAIN: ${{ vars.DOMAIN }}
 
 jobs:
   build:
