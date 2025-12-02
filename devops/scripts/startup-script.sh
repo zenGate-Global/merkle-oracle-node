@@ -149,3 +149,4 @@ if ! docker ps | grep -q merkle-caddy; then
     -v /mnt/stateful_partition/caddy/logs:/var/log/caddy \
     caddy:2-alpine
 fi
+
