@@ -107,32 +107,6 @@ jobs:
       - name: Wait for container restart
         run: sleep 45
 
-      - name: Enable Cloud Logging
-        run: |
-          set -euo pipefail
-          gcloud compute ssh $INSTANCE_NAME \
-            --zone=$ZONE \
-            --tunnel-through-iap \
-            --quiet \
-            --command="
-              set -e
-              CONTAINER_ID=\$(sudo docker ps -q --filter name=merkle-oracle-node)
-              if [ -n \"\$CONTAINER_ID\" ]; then
-                IMAGE=\$(sudo docker inspect \$CONTAINER_ID --format='{{.Config.Image}}')
-                sudo docker stop \$CONTAINER_ID
-                sudo docker rm \$CONTAINER_ID
-                sudo docker run -d \
-                  --name merkle-oracle-node \
-                  --restart always \
-                  --log-driver=gcplogs \
-                  --log-opt gcp-log-cmd=true \
-                  -v /mnt/stateful_partition/config:/etc/config:ro \
-                  --network host \
-                  \$IMAGE node -config /etc/config/config.yaml
-                echo 'Container recreated with gcplogs'
-              fi
-            "
-
   verify:
     name: Verify Deployment
     runs-on: ubuntu-latest
