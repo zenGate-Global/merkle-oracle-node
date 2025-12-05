@@ -1354,50 +1354,56 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			return fmt.Errorf("failed to get previous state from DB: %v", err)
 		}
 
-		validationReport, err := s.validateTrieOperations(
-			payload.Data,
-			previousState,
-			payload.TrieData.Insertions,
-			payload.TrieData.Updates,
-			payload.TrieData.Deletions,
-		)
-		if err != nil {
-			s.logger.Warnw("Failed to validate trie operations", "error", err)
-		} else if !validationReport.Valid {
-			s.logger.Warnw("Trie operations validation failed",
-				"missing_insertions", len(validationReport.MissingInsertions),
-				"unexpected_insertions", len(validationReport.UnexpectedInsertions),
-				"missing_updates", len(validationReport.MissingUpdates),
-				"unexpected_updates", len(validationReport.UnexpectedUpdates),
-				"missing_deletions", len(validationReport.MissingDeletions),
-				"unexpected_deletions", len(validationReport.UnexpectedDeletions),
-				"errors", len(validationReport.Errors),
+		if !s.appCfg.Indexer.SkipTrieValidation {
+			validationReport, err := s.validateTrieOperations(
+				payload.Data,
+				previousState,
+				payload.TrieData.Insertions,
+				payload.TrieData.Updates,
+				payload.TrieData.Deletions,
 			)
+			if err != nil {
+				s.logger.Warnw(
+					"Failed to validate trie operations",
+					"error",
+					err,
+				)
+			} else if !validationReport.Valid {
+				s.logger.Warnw("Trie operations validation failed",
+					"missing_insertions", len(validationReport.MissingInsertions),
+					"unexpected_insertions", len(validationReport.UnexpectedInsertions),
+					"missing_updates", len(validationReport.MissingUpdates),
+					"unexpected_updates", len(validationReport.UnexpectedUpdates),
+					"missing_deletions", len(validationReport.MissingDeletions),
+					"unexpected_deletions", len(validationReport.UnexpectedDeletions),
+					"errors", len(validationReport.Errors),
+				)
 
-			if len(validationReport.MissingInsertions) > 0 {
-				s.logger.Debugw("Missing insertions", "keys", validationReport.MissingInsertions)
-			}
-			if len(validationReport.UnexpectedInsertions) > 0 {
-				s.logger.Debugw("Unexpected insertions", "keys", validationReport.UnexpectedInsertions)
-			}
-			if len(validationReport.MissingUpdates) > 0 {
-				s.logger.Debugw("Missing updates", "keys", validationReport.MissingUpdates)
-			}
-			if len(validationReport.UnexpectedUpdates) > 0 {
-				s.logger.Debugw("Unexpected updates", "keys", validationReport.UnexpectedUpdates)
-			}
-			if len(validationReport.MissingDeletions) > 0 {
-				s.logger.Debugw("Missing deletions", "keys", validationReport.MissingDeletions)
-			}
-			if len(validationReport.UnexpectedDeletions) > 0 {
-				s.logger.Debugw("Unexpected deletions", "keys", validationReport.UnexpectedDeletions)
-			}
-			if len(validationReport.Errors) > 0 {
-				s.logger.Debugw("Validation errors", "errors", validationReport.Errors)
-			}
+				if len(validationReport.MissingInsertions) > 0 {
+					s.logger.Debugw("Missing insertions", "keys", validationReport.MissingInsertions)
+				}
+				if len(validationReport.UnexpectedInsertions) > 0 {
+					s.logger.Debugw("Unexpected insertions", "keys", validationReport.UnexpectedInsertions)
+				}
+				if len(validationReport.MissingUpdates) > 0 {
+					s.logger.Debugw("Missing updates", "keys", validationReport.MissingUpdates)
+				}
+				if len(validationReport.UnexpectedUpdates) > 0 {
+					s.logger.Debugw("Unexpected updates", "keys", validationReport.UnexpectedUpdates)
+				}
+				if len(validationReport.MissingDeletions) > 0 {
+					s.logger.Debugw("Missing deletions", "keys", validationReport.MissingDeletions)
+				}
+				if len(validationReport.UnexpectedDeletions) > 0 {
+					s.logger.Debugw("Unexpected deletions", "keys", validationReport.UnexpectedDeletions)
+				}
+				if len(validationReport.Errors) > 0 {
+					s.logger.Debugw("Validation errors", "errors", validationReport.Errors)
+				}
 
-		} else {
-			s.logger.Infow("Trie operations validation passed successfully")
+			} else {
+				s.logger.Infow("Trie operations validation passed successfully")
+			}
 		}
 
 		// build map of key_hash -> (object_id, raw_key, raw_value) from the full snapshot `data`

@@ -9,6 +9,7 @@ indexer:
   txExpirationBlockNumber: 3
   restartThreshold: 3
   restartTimeWindow: 10m
+  skipTrieValidation: false
 
 metrics:
   listenAddress: "0.0.0.0"
