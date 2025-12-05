@@ -94,7 +94,7 @@ jobs:
             echo "VERSION=${{ steps.build-test.outputs.VERSION }}" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: release-dist
           path: dist/
