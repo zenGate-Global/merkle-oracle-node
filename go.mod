@@ -1,8 +1,6 @@
 module zenGate-Global/merkle-oracle-node
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25
 
 require (
 	cloud.google.com/go/storage v1.56.1
@@ -17,7 +15,7 @@ require (
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
 	github.com/disgoorg/snowflake/v2 v2.0.3
-	github.com/eko/gocache/lib/v4 v4.2.0
+	github.com/eko/gocache/lib/v4 v4.2.2
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/gin-contrib/zap v1.1.5
 	github.com/gin-gonic/gin v1.10.1
@@ -159,7 +157,6 @@ require (
 	go.opentelemetry.io/otel/sdk v1.38.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
-	go.uber.org/mock v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
 	golang.org/x/net v0.47.0 // indirect
