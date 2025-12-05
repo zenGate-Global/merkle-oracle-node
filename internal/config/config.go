@@ -45,6 +45,9 @@ type IndexerConfig struct {
 	// Restart tracking configuration
 	RestartThreshold  int           `yaml:"restartThreshold"  envconfig:"INDEXER_RESTART_THRESHOLD"`
 	RestartTimeWindow time.Duration `yaml:"restartTimeWindow" envconfig:"INDEXER_RESTART_TIME_WINDOW"`
+
+	// SkipTrieValidation skips trie operation validation during indexing for faster sync
+	SkipTrieValidation bool `yaml:"skipTrieValidation" envconfig:"INDEXER_SKIP_TRIE_VALIDATION"`
 }
 
 type SubmitConfig struct {
