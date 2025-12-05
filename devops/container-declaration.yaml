@@ -1,0 +1,29 @@
+# DISCLAIMER:
+# The option to deploy a container during VM creation using the container
+# startup agent is deprecated. Use alternative services to run containers on
+# your VMs. Learn more at https://cloud.google.com/compute/docs/containers/migrate-containers.
+
+spec:
+  containers:
+  - args: []
+    image: europe-west1-docker.pkg.dev/palm-portal-staging/merkle-oracle-node/merkle-oracle-node:v1.2.1
+    name: merkle-oracle-node
+    securityContext:
+      privileged: false
+    stdin: false
+    tty: false
+    volumeMounts:
+    - mountPath: /etc/config
+      name: host-path-0
+      readOnly: true
+  restartPolicy: Always
+  volumes:
+  - hostPath:
+      path: /mnt/stateful_partition/config
+    name: host-path-0
+  # Cloud Logging configuration
+  logConfig:
+    driver: gcplogs
+    options:
+      gcp-log-cmd: "true"
+      labels: "container_name"
