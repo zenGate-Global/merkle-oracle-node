@@ -10,9 +10,9 @@ require (
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/anthdm/hollywood v1.0.5
 	github.com/bdpiprava/scalar-go v0.12.1
-	github.com/blinklabs-io/adder v0.32.6
+	github.com/blinklabs-io/adder v0.35.0
 	github.com/blinklabs-io/bursa v0.11.1
-	github.com/blinklabs-io/gouroboros v0.135.2
+	github.com/blinklabs-io/gouroboros v0.142.0
 	github.com/blinklabs-io/merkle-patricia-forestry v0.1.5
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
@@ -77,7 +77,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.54.0 // indirect
+	github.com/quic-go/quic-go v0.54.1 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
@@ -105,10 +106,10 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
 	github.com/Salvionied/cbor/v2 v2.6.0 // indirect
 	github.com/SundaeSwap-finance/kugo v1.3.0 // indirect
-	github.com/SundaeSwap-finance/ogmigo/v6 v6.1.0 // indirect
+	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/blinklabs-io/plutigo v0.0.13 // indirect
+	github.com/blinklabs-io/plutigo v0.0.16 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
@@ -145,7 +146,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sasha-s/go-csync v0.0.0-20240107134140-fcbab37b09ad // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/utxorpc/go-codegen v0.17.0 // indirect
+	github.com/utxorpc/go-codegen v0.18.1 // indirect
 	github.com/utxorpc/go-sdk v0.0.0-20251007134241-dbe24b0be860 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
