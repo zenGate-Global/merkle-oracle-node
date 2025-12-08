@@ -51,8 +51,8 @@ github.com/anthdm/hollywood v1.0.5 h1:SuCTVRRFqx0MZ4E0RijHl4+Xt56PF0C7aqYKguBU6j
 github.com/anthdm/hollywood v1.0.5/go.mod h1:wU4WxIRVs++E2PuiVXc8dA2An/Wlom4AhzwQ7e3tDzI=
 github.com/aws/aws-sdk-go v1.55.6 h1:cSg4pvZ3m8dgYcgqB97MrcdjUmZ1BeMYKUxMMB89IPk=
 github.com/aws/aws-sdk-go v1.55.6/go.mod h1:eRwEWoyTWFMVYVQzKMNHWP5/RV4xIUGMQfXQHfHkpNU=
-github.com/bdpiprava/scalar-go v0.12.1 h1:hgLUv1B81epYBO3neJvzmqZfsco72VRrqA0Yy62iqyk=
-github.com/bdpiprava/scalar-go v0.12.1/go.mod h1:e5Nn4yIhcYjlucu4ACMqcs410nIAe5whqj78H3Qv7vw=
+github.com/bdpiprava/scalar-go v0.13.0 h1:TuhOwYalDpLAziohyEwZlq4PqtEJ+6P/V92dDCdja9k=
+github.com/bdpiprava/scalar-go v0.13.0/go.mod h1:e5Nn4yIhcYjlucu4ACMqcs410nIAe5whqj78H3Qv7vw=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bits-and-blooms/bitset v1.20.0 h1:2F+rfL86jE2d/bmw7OhqUg2Sj/1rURkBn3MdfoPyRVU=
