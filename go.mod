@@ -12,7 +12,7 @@ require (
 	github.com/bdpiprava/scalar-go v0.12.1
 	github.com/blinklabs-io/adder v0.32.6
 	github.com/blinklabs-io/bursa v0.11.1
-	github.com/blinklabs-io/gouroboros v0.135.2
+	github.com/blinklabs-io/gouroboros v0.143.0
 	github.com/blinklabs-io/merkle-patricia-forestry v0.1.5
 	github.com/disgoorg/disgo v0.18.16
 	github.com/disgoorg/dislog v1.1.0
@@ -108,7 +108,7 @@ require (
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.1.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/blinklabs-io/plutigo v0.0.13 // indirect
+	github.com/blinklabs-io/plutigo v0.0.16 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
@@ -145,7 +145,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sasha-s/go-csync v0.0.0-20240107134140-fcbab37b09ad // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/utxorpc/go-codegen v0.17.0 // indirect
+	github.com/utxorpc/go-codegen v0.18.1 // indirect
 	github.com/utxorpc/go-sdk v0.0.0-20251007134241-dbe24b0be860 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
