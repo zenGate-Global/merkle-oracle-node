@@ -174,7 +174,7 @@ require (
 	google.golang.org/grpc v1.77.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/datatypes v1.2.6
+	gorm.io/datatypes v1.2.7
 )
 
 replace github.com/Salvionied/apollo => github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd
