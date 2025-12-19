@@ -19,7 +19,7 @@ require (
 	github.com/disgoorg/snowflake/v2 v2.0.3
 	github.com/eko/gocache/lib/v4 v4.2.0
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
-	github.com/gin-contrib/zap v1.1.5
+	github.com/gin-contrib/zap v1.1.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -174,7 +174,7 @@ require (
 	google.golang.org/grpc v1.77.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/datatypes v1.2.6
+	gorm.io/datatypes v1.2.7
 )
 
 replace github.com/Salvionied/apollo => github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd
