@@ -8,6 +8,9 @@ services:
       - ./assets:/data/assets
     command: -config ./config.yaml
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
     ports:
       - "127.0.0.1:9090:9090"
       - "127.0.0.1:9091:9091"
