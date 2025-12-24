@@ -181,7 +181,7 @@ jobs:
           
           gcloud compute instance-groups managed rolling-action restart ${{ env.MIG_NAME }} \
             --zone=${{ env.ZONE }} \
-            --max-unavailable=0 \
+            --max-unavailable=1 \
             --project=${{ env.PROJECT_ID }}
 
       - name: Wait for MIG to stabilize
