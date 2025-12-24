@@ -8,9 +8,8 @@ on:
     inputs:
       tag:
         description: 'Docker image tag to deploy (e.g., v1.0.3)'
-        required: false
+        required: true
         type: string
-        default: 'v1.0.1-staging'
 
 env:
   PROJECT_ID: merkle-oracle-staging
@@ -19,7 +18,6 @@ env:
   IMAGE_NAME: merkle-oracle-node
   MIG_NAME: merkle-oracle-node-mig-staging
   DOMAIN: merkle-staging4.zengate-dev.com
-  DEFAULT_TAG: v1.0.1-staging
 
 jobs:
   build:
@@ -40,9 +38,10 @@ jobs:
         id: set-tag
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag || env.DEFAULT_TAG }}"
+            TAG="${{ github.event.inputs.tag }}"
           else
-            TAG="${{ env.DEFAULT_TAG }}"
+            echo "Error: Push trigger requires manual tag specification"
+            exit 1
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
