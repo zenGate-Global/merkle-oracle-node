@@ -13,7 +13,7 @@
         },
         "version": "1.0.0"
     },
-    "host": "localhost:8080",
+    "host": "merkle-staging4.zengate-dev.com",
     "basePath": "/",
     "paths": {
         "/healthcheck": {
