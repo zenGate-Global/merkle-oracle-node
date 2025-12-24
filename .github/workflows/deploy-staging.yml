@@ -184,26 +184,6 @@ jobs:
             --max-unavailable=1 \
             --project=${{ env.PROJECT_ID }}
 
-      - name: Wait for MIG to stabilize
-        run: |
-          set -euo pipefail
-          
-          for i in {1..30}; do
-            STATUS=$(gcloud compute instance-groups managed describe ${{ env.MIG_NAME }} \
-              --zone=${{ env.ZONE }} \
-              --format="value(status.isStable)" \
-              --project=${{ env.PROJECT_ID }})
-            
-            if [ "$STATUS" = "True" ]; then
-              exit 0
-            fi
-            
-            sleep 20
-          done
-          
-          echo "MIG did not stabilize"
-          exit 1
-
       - name: Clean up old instance templates
         if: success()
         run: |
