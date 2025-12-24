@@ -142,29 +142,23 @@ jobs:
           
           echo "Creating template: $NEW_TEMPLATE"
           
-          # Get the startup script from the current template
+          # Get the startup script from the current template and update IMAGE_TAG
           gcloud compute instance-templates describe $CURRENT_TEMPLATE \
-            --format="value(properties.metadata.items[startup-script])" > /tmp/startup-script.sh
-          
-          # Create new template based on current one but with new image tag
-          gcloud compute instance-templates create $NEW_TEMPLATE \
-            --source-instance-template=$CURRENT_TEMPLATE \
-            --metadata-from-file=startup-script=/tmp/startup-script.sh \
-            --project=${{ env.PROJECT_ID }} \
-            --region=${{ env.REGION }}
-          
-          # Update the IMAGE_TAG in the startup script metadata
-          # The startup script uses ${image_tag} variable which gets replaced
-          gcloud compute instance-templates describe $NEW_TEMPLATE \
             --format="value(properties.metadata.items[startup-script])" | \
-            sed "s|IMAGE_TAG=.*|IMAGE_TAG=\"$TAG\"|g" > /tmp/startup-script-updated.sh
+            sed "s|IMAGE_TAG=\".*\"|IMAGE_TAG=\"$TAG\"|g" > /tmp/startup-script-updated.sh
           
-          # Recreate template with updated startup script
-          gcloud compute instance-templates delete $NEW_TEMPLATE --quiet
-          
+          # Create new template with all parameters from current template
           gcloud compute instance-templates create $NEW_TEMPLATE \
-            --source-instance-template=$CURRENT_TEMPLATE \
+            --machine-type=e2-medium \
+            --network-interface=network-tier=PREMIUM,address=34.14.39.221 \
             --metadata-from-file=startup-script=/tmp/startup-script-updated.sh \
+            --metadata=enable-oslogin=TRUE \
+            --maintenance-policy=MIGRATE \
+            --provisioning-model=STANDARD \
+            --service-account=merkle-oracle-node-sa-staging@merkle-oracle-staging.iam.gserviceaccount.com \
+            --scopes=https://www.googleapis.com/auth/cloud-platform \
+            --tags=merkle-oracle-node-web,allow-health-check \
+            --create-disk=auto-delete=yes,boot=yes,device-name=persistent-disk-0,image=projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts,mode=rw,size=100,type=pd-ssd \
             --project=${{ env.PROJECT_ID }} \
             --region=${{ env.REGION }}
           
