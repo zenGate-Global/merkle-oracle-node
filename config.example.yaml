@@ -52,8 +52,8 @@ api:
   maestroApiKey: ""
 
 cloud:
-  gcpCredentialJSONPath: "./gcp.json"
-  bucketName: "oracle-bucket-dev"
+  gcpCredentialJSONPath: ""
+  bucketName: ""
   pinataGatewayURL: "https://gateway.pinata.cloud"
   pinataJWT: ""
   retryMaxAttempts: 50
@@ -63,7 +63,7 @@ cloud:
 
 oracle:
   updateInterval: 2m
-  baseURL: ""
+  baseURL: "https://oracle-data-provider-901919715597.asia-southeast1.run.app"
 
 profile: "oracle-preview"
 network: "preview"
