@@ -1,9 +1,6 @@
 name: Deploy to Staging
 
 on:
-  push:
-    branches:
-      - move-to-MIG-instances
   workflow_dispatch:
     inputs:
       tag:
@@ -37,12 +34,7 @@ jobs:
       - name: Set tag
         id: set-tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            echo "Error: Push trigger requires manual tag specification"
-            exit 1
-          fi
+          TAG="${{ github.event.inputs.tag }}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Checkout code
