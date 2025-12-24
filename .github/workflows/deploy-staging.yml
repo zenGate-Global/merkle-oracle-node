@@ -210,6 +210,46 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Get instance from MIG
+        id: get-instance
+        run: |
+          set -euo pipefail
+          
+          INSTANCE=$(gcloud compute instance-groups managed list-instances ${{ env.MIG_NAME }} \
+            --zone=${{ env.ZONE }} \
+            --format="value(NAME)" \
+            --project=${{ env.PROJECT_ID }} | head -1)
+          
+          echo "instance=$INSTANCE" >> $GITHUB_OUTPUT
+
+      - name: Verify application health via SSH
+        run: |
+          set -euo pipefail
+          INSTANCE="${{ steps.get-instance.outputs.instance }}"
+          
+          for i in {1..30}; do
+            if gcloud compute ssh $INSTANCE \
+              --zone=${{ env.ZONE }} \
+              --tunnel-through-iap \
+              --quiet \
+              --project=${{ env.PROJECT_ID }} \
+              --command="curl -f -s --max-time 5 http://localhost:8080/healthcheck > /dev/null 2>&1"; then
+              echo "Health check passed on instance $INSTANCE"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          
+          echo "Health check failed after 30 attempts"
+          gcloud compute ssh $INSTANCE \
+            --zone=${{ env.ZONE }} \
+            --tunnel-through-iap \
+            --quiet \
+            --project=${{ env.PROJECT_ID }} \
+            --command="sudo docker logs ${{ env.IMAGE_NAME }} --tail 50" || true
+          exit 1
+
       - name: Verify HTTPS endpoint
         run: |
           set -euo pipefail
