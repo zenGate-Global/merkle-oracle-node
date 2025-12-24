@@ -103,7 +103,8 @@ fi
 log "Creating directory structure..."
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$CADDY_DIR"/{data,config,logs}
-mkdir -p "$DATA_DIR/data"
+mkdir -p "$DATA_DIR/data/assets/logs"
+chmod -R 777 "$DATA_DIR/data"
 chmod -R 755 "$DATA_DIR"
 
 # ============================================================================
