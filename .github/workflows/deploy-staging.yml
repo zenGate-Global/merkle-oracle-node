@@ -217,7 +217,7 @@ jobs:
           
           INSTANCE=$(gcloud compute instance-groups managed list-instances ${{ env.MIG_NAME }} \
             --zone=${{ env.ZONE }} \
-            --format="value(instance)" \
+            --format="value(NAME)" \
             --project=${{ env.PROJECT_ID }} | head -1)
           
           echo "instance=$INSTANCE" >> $GITHUB_OUTPUT
