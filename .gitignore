@@ -38,3 +38,9 @@ config.mainnet.yaml
 config.yaml
 
 gcp.json
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
