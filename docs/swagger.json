@@ -13,7 +13,6 @@
         },
         "version": "1.0.0"
     },
-    "host": "localhost:8080",
     "basePath": "/",
     "paths": {
         "/healthcheck": {
@@ -476,6 +475,9 @@
         "database.ValueHashWithTimestamp": {
             "type": "object",
             "properties": {
+                "proof": {
+                    "type": "string"
+                },
                 "slot": {
                     "type": "integer"
                 },

@@ -32,6 +32,8 @@ definitions:
     type: object
   database.ValueHashWithTimestamp:
     properties:
+      proof:
+        type: string
       slot:
         type: integer
       timestamp:
@@ -41,7 +43,6 @@ definitions:
           type: integer
         type: array
     type: object
-host: localhost:8080
 info:
   contact: {}
   license:

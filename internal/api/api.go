@@ -21,7 +21,6 @@ import (
 // @version      1.0.0
 // @license.name Apache 2.0
 // @license.url  http://www.apache.org/licenses/LICENSE-2.0.html
-// @host         localhost:8080
 // @BasePath     /
 // @tag.name     objects
 // @tag.description Object Queries
@@ -45,12 +44,6 @@ func generateScalarDocs() {
 			scalargo.WithTitle("Merkle Oracle Node API"),
 		),
 		scalargo.WithLayout(scalargo.LayoutClassic),
-		scalargo.WithServers(
-			scalargo.Server{
-				URL:         "https://merkle-oracle.zengate-dev.com",
-				Description: "Staging Server",
-			},
-		),
 	)
 
 	if err != nil {
