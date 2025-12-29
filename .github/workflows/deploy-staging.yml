@@ -129,16 +129,14 @@ jobs:
           IMAGE="${{ needs.build.outputs.image }}:$TAG"
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           NEW_TEMPLATE="${{ env.IMAGE_NAME }}-template-staging-$TIMESTAMP"
-          CURRENT_TEMPLATE="${{ steps.current-template.outputs.current_template }}"
           
           echo "Creating template: $NEW_TEMPLATE"
           
-          # Get the startup script from the current template and update IMAGE_TAG
-          gcloud compute instance-templates describe $CURRENT_TEMPLATE \
-            --format="value(properties.metadata.items[startup-script])" | \
-            sed "s|IMAGE_TAG=\".*\"|IMAGE_TAG=\"$TAG\"|g" > /tmp/startup-script-updated.sh
+          # Use the startup script from the repository and set IMAGE_TAG
+          sed "s|IMAGE_TAG=\".*\"|IMAGE_TAG=\"$TAG\"|g" \
+            devops/infrastructure/terraform/scripts/ubuntu-startup.sh.tpl > /tmp/startup-script-updated.sh
           
-          # Create new template with all parameters from current template
+          # Create new template with all parameters
           gcloud compute instance-templates create $NEW_TEMPLATE \
             --machine-type=e2-medium \
             --network-interface=network-tier=PREMIUM,address=34.14.39.221 \
