@@ -14,7 +14,7 @@ env:
   ZONE: europe-west1-b
   IMAGE_NAME: merkle-oracle-node
   MIG_NAME: merkle-oracle-node-mig-staging
-  DOMAIN: merkle-staging4.zengate-dev.com
+  DOMAIN: merkle-staging2.zengate-dev.com
 
 jobs:
   build:
