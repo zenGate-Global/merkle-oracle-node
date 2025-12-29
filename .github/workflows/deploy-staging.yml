@@ -258,10 +258,26 @@ jobs:
         run: |
           set -euo pipefail
           
-          if ! curl -f -s --max-time 10 https://${{ env.DOMAIN }}/healthcheck > /dev/null 2>&1; then
-            echo "HTTPS endpoint failed"
-            exit 1
-          fi
+          echo "Testing HTTPS endpoint: https://${{ env.DOMAIN }}/healthcheck"
+          
+          for i in {1..30}; do
+            if curl -f -s --max-time 10 https://${{ env.DOMAIN }}/healthcheck > /dev/null 2>&1; then
+              echo "HTTPS health check passed"
+              
+              if curl -f -s --max-time 10 https://${{ env.DOMAIN }}/docs > /dev/null 2>&1; then
+                echo "HTTPS docs endpoint passed"
+                exit 0
+              else
+                echo "Docs endpoint not ready yet, retrying..."
+              fi
+            else
+              echo "Attempt $i failed, retrying in 10s..."
+            fi
+            sleep 10
+          done
+          
+          echo "HTTPS endpoint verification failed after 30 attempts"
+          exit 1
 
   summary:
     name: Deployment Summary
