@@ -132,8 +132,14 @@ jobs:
           
           echo "Creating template: $NEW_TEMPLATE"
           
-          # Use the startup script from the repository and set IMAGE_TAG
-          sed "s|IMAGE_TAG=\".*\"|IMAGE_TAG=\"$TAG\"|g" \
+          # Use the startup script from the repository and replace all template variables
+          sed -e "s|\${app_name}|${{ env.IMAGE_NAME }}|g" \
+              -e "s|\${project_id}|${{ env.PROJECT_ID }}|g" \
+              -e "s|\${region}|${{ env.REGION }}|g" \
+              -e "s|\${image_tag}|$TAG|g" \
+              -e "s|\${secret_name}|merkle-oracle-staging-config|g" \
+              -e "s|\${domain}|${{ env.DOMAIN }}|g" \
+              -e "s|\${app_port}|8080|g" \
             devops/infrastructure/terraform/scripts/ubuntu-startup.sh.tpl > /tmp/startup-script-updated.sh
           
           # Create new template with all parameters
