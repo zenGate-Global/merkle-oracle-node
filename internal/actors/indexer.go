@@ -16,7 +16,6 @@ import (
 	"zenGate-Global/merkle-oracle-node/internal/metrics"
 	"zenGate-Global/merkle-oracle-node/internal/types"
 
-	"github.com/blinklabs-io/adder/event"
 	addevent "github.com/blinklabs-io/adder/event"
 	filter_event "github.com/blinklabs-io/adder/filter/event"
 	input_chainsync "github.com/blinklabs-io/adder/input/chainsync"
@@ -37,7 +36,7 @@ type SetDownstream struct {
 
 // Internal message to carry pipeline events from goroutine to actor's Receive
 type internalPipelineEvent struct {
-	event event.Event
+	event addevent.Event
 	err   error
 }
 
@@ -224,7 +223,7 @@ func (a *IndexerActor) handlePipelineErrors() {
 	}
 }
 
-func (a *IndexerActor) handlePipelineEvent(evt event.Event) error {
+func (a *IndexerActor) handlePipelineEvent(evt addevent.Event) error {
 	a.engine.Send(a.selfPID, internalPipelineEvent{event: evt, err: nil})
 	return nil
 }
@@ -237,7 +236,7 @@ func (a *IndexerActor) handleStatusUpdate(
 
 func (a *IndexerActor) processPipelineEvent(
 	ctx *actor.Context,
-	evt event.Event,
+	evt addevent.Event,
 ) {
 	// check for shutdown
 	select {
@@ -308,7 +307,7 @@ func (a *IndexerActor) syncStatusLog() {
 	a.scheduleSyncStatusLog()
 }
 
-func (a *IndexerActor) handleNewBlockEvent(evt event.Event) {
+func (a *IndexerActor) handleNewBlockEvent(evt addevent.Event) {
 	metrics.MetricBlocksProcessed.Inc()
 
 	blockEvent := evt.Payload.(addevent.BlockEvent)
@@ -323,7 +322,7 @@ func (a *IndexerActor) handleNewBlockEvent(evt event.Event) {
 	}
 }
 
-func (a *IndexerActor) handleEventRollback(evt event.Event) {
+func (a *IndexerActor) handleEventRollback(evt addevent.Event) {
 	metrics.MetricRollbacksProcessed.Inc()
 
 	eventRollback := evt.Payload.(addevent.RollbackEvent)
@@ -338,7 +337,7 @@ func (a *IndexerActor) handleEventRollback(evt event.Event) {
 
 }
 
-func (a *IndexerActor) handleEventTransaction(evt event.Event) {
+func (a *IndexerActor) handleEventTransaction(evt addevent.Event) {
 	metrics.MetricTransactionsProcessed.Inc()
 
 	eventTx := evt.Payload.(addevent.TransactionEvent)
