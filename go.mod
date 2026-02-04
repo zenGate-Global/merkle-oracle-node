@@ -7,7 +7,7 @@ require (
 	github.com/Salvionied/apollo v1.1.1
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/anthdm/hollywood v1.0.5
-	github.com/bdpiprava/scalar-go v0.12.1
+	github.com/bdpiprava/scalar-go v0.13.0
 	github.com/blinklabs-io/adder v0.32.6
 	github.com/blinklabs-io/bursa v0.11.1
 	github.com/blinklabs-io/gouroboros v0.135.2
