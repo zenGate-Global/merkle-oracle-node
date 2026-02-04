@@ -9,7 +9,7 @@ permissions:
 
 env:
   APPLICATION_NAME: "node"
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
 
 defaults:
   run:
@@ -203,5 +203,4 @@ jobs:
           asset_path: dist/${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_name: ${{ env.APPLICATION_NAME }}_${{ needs.pre_release_test.outputs.VERSION }}_windows_amd64.zip
           asset_content_type: application/zip
-
 
