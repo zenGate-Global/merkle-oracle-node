@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/anthdm/hollywood/actor"
-	input_chainsync "github.com/blinklabs-io/adder/input/chainsync"
+	addevent "github.com/blinklabs-io/adder/event"
 )
 
 // Strategy configuration for merkle oracle node
@@ -22,14 +22,14 @@ type SetParentPID struct {
 
 // Events that can be sent to strategies
 type IndexerBlockEvent struct {
-	BlockEvent input_chainsync.BlockEvent
+	BlockEvent addevent.BlockEvent
 	Timestamp  time.Time
 	TipReached bool
 }
 
 type IndexerTransactionEvent struct {
-	EventTransaction input_chainsync.TransactionEvent
-	EventContext     input_chainsync.TransactionContext
+	EventTransaction addevent.TransactionEvent
+	EventContext     addevent.TransactionContext
 	EventTimestamp   time.Time
 	TipReached       bool
 }

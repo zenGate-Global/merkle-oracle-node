@@ -34,7 +34,7 @@ import (
 	apolloTxOutput "github.com/Salvionied/apollo/serialization/TransactionOutput"
 	apolloUTxO "github.com/Salvionied/apollo/serialization/UTxO"
 
-	input_chainsync "github.com/blinklabs-io/adder/input/chainsync"
+	addevent "github.com/blinklabs-io/adder/event"
 )
 
 type trieLike interface {
@@ -391,7 +391,9 @@ func (s *ChainEventProcessorActor) diffTrieOpsCore(
 			kh := bytes32(s.db.KeyHash(objID, k))
 			vh, err := s.db.ValueHash(v)
 			if err != nil {
-				s.logger.Warnf("marshal value for %s:%s: %v", objID, k, err)
+				if s.logger != nil {
+					s.logger.Warnf("marshal value for %s:%s: %v", objID, k, err)
+				}
 				continue
 			}
 			vhBytes32 := bytes32(vh)
@@ -1742,11 +1744,11 @@ func (s *ChainEventProcessorActor) finalizeZeroTxBlock(
 	blockHash := msg.BlockEvent.Block.Hash().String()
 
 	mockedTransactionEvent := types.IndexerTransactionEvent{
-		EventContext: input_chainsync.TransactionContext{
+		EventContext: addevent.TransactionContext{
 			BlockNumber: blockNumber,
 			SlotNumber:  slotNumber,
 		},
-		EventTransaction: input_chainsync.TransactionEvent{
+		EventTransaction: addevent.TransactionEvent{
 			BlockHash: blockHash,
 		},
 		EventTimestamp: msg.Timestamp,
