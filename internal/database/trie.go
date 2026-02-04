@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,6 +185,38 @@ func EncodeCanonical(v any, b *bytes.Buffer) error {
 		}
 		enc, _ := json.Marshal(t)
 		b.Write(enc)
+
+	case []interface{}:
+		b.WriteByte('[')
+		for i, elem := range t {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			if err := EncodeCanonical(elem, b); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(']')
+
+	case map[string]interface{}:
+		b.WriteByte('{')
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			keyEnc, _ := json.Marshal(k)
+			b.Write(keyEnc)
+			b.WriteByte(':')
+			if err := EncodeCanonical(t[k], b); err != nil {
+				return err
+			}
+		}
+		b.WriteByte('}')
 
 	default:
 		return fmt.Errorf("unsupported JSON value type: %T", v)

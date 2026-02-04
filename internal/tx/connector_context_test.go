@@ -15,7 +15,7 @@ func setupCustomContext(t *testing.T) ConnectorContext {
 
 	projectID := os.Getenv("BLOCKFROST_KEY")
 	if projectID == "" {
-		t.Log("BLOCKFROST_KEY environment variable not set")
+		t.Skip("BLOCKFROST_KEY environment variable not set; skipping Blockfrost integration tests")
 	}
 
 	config := blockfrostConnector.Config{

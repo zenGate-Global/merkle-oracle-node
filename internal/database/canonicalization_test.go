@@ -54,9 +54,9 @@ func TestCanonicalizeJSON_Primitives(t *testing.T) {
 		{name: "BoolFalse", in: "false", want: "false"},
 		{name: "Null", in: "null", want: "null"},
 
-		// unsupported types
-		{name: "Array", in: "[]", wantErr: true},
-		{name: "Object", in: "{}", wantErr: true},
+		// collections
+		{name: "Array", in: "[]", want: "[]"},
+		{name: "Object", in: "{}", want: "{}"},
 	}
 
 	for _, tc := range cases {
