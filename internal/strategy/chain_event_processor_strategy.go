@@ -1354,6 +1354,10 @@ func (s *ChainEventProcessorActor) handleImmediatePublish(req types.ImmediatePub
 	s.logger.Infof("Immediate publish transaction submitted: %s", txHash)
 	AddPendingTransaction(txHash, inputMap, s.lastSuccessfullyIndexedBlockNum)
 
+	if err := s.db.CreatePublishRecords(context.Background(), txHash, oracleDataMap); err != nil {
+		s.logger.Errorf("immediate publish: save publish records: %v", err)
+	}
+
 	// The publish tx consumed the old validator UTxO; clear the cache so the
 	// regular flow re-fetches the (now-different) on-chain UTxO instead of
 	// reusing the stale one.
@@ -1383,6 +1387,10 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			txHash,
 			txEvent.EventContext.BlockNumber-pendingTxInfo.submissionBlockHeight,
 		)
+
+		if err := s.db.ConfirmPublishRecords(context.Background(), txHash); err != nil {
+			s.logger.Errorf("failed to confirm publish records for tx %s: %v", txHash, err)
+		}
 	}
 
 	redeemers := txEvent.EventTransaction.Witnesses.Redeemers()

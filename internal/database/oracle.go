@@ -147,3 +147,21 @@ type TrieOperationKey struct {
 }
 
 func (TrieOperationKey) TableName() string { return "trie_operation_key" }
+
+type PublishStatus string
+
+const (
+	PublishStatusPending   PublishStatus = "pending"
+	PublishStatusConfirmed PublishStatus = "confirmed"
+)
+
+type PublishRecord struct {
+	ID        int64          `gorm:"primaryKey;autoIncrement"                          json:"id"`
+	ObjectID  string         `gorm:"column:object_id;not null;index:pr_object_idx"    json:"objectId"`
+	Data      datatypes.JSON `gorm:"column:data;type:jsonb;not null"                  json:"data" swaggertype:"object"`
+	TxHash    string         `gorm:"column:tx_hash;not null;index:pr_tx_hash_idx"     json:"txHash"`
+	Status    PublishStatus  `gorm:"column:status;type:varchar(20);not null;default:'pending';index:pr_status_idx" json:"status"`
+	CreatedAt time.Time      `gorm:"column:created_at;not null;default:now();index:pr_created_idx" json:"createdAt"`
+}
+
+func (PublishRecord) TableName() string { return "publish_record" }

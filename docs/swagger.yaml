@@ -49,6 +49,42 @@ definitions:
       total:
         type: integer
     type: object
+  database.PublishHistoryResult:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      records:
+        items:
+          $ref: '#/definitions/database.PublishRecord'
+        type: array
+      total:
+        type: integer
+    type: object
+  database.PublishRecord:
+    properties:
+      createdAt:
+        type: string
+      data:
+        type: object
+      id:
+        type: integer
+      objectId:
+        type: string
+      status:
+        $ref: '#/definitions/database.PublishStatus'
+      txHash:
+        type: string
+    type: object
+  database.PublishStatus:
+    enum:
+    - pending
+    - confirmed
+    type: string
+    x-enum-varnames:
+    - PublishStatusPending
+    - PublishStatusConfirmed
   database.ValueHashWithTimestamp:
     properties:
       proof:
@@ -365,6 +401,56 @@ paths:
               type: string
             type: object
       summary: Publish Custom Data Immediately
+      tags:
+      - system
+  /publish/history:
+    get:
+      description: Returns records of data published via POST /publish. By default
+        returns the latest version per object_id. Set expand_history=true to see all
+        versions.
+      parameters:
+      - description: Filter by object ID
+        in: query
+        name: object_id
+        type: string
+      - description: Filter by transaction hash
+        in: query
+        name: tx_hash
+        type: string
+      - description: Filter from date (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: Filter to date (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: 'Show all versions per object_id (default: false, latest only)'
+        in: query
+        name: expand_history
+        type: boolean
+      - description: Results per page (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/database.PublishHistoryResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get Publish History
       tags:
       - system
   /statistics/costs:

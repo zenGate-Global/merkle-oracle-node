@@ -453,6 +453,79 @@
                 }
             }
         },
+        "/publish/history": {
+            "get": {
+                "description": "Returns records of data published via POST /publish. By default returns the latest version per object_id. Set expand_history=true to see all versions.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Get Publish History",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by object ID",
+                        "name": "object_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by transaction hash",
+                        "name": "tx_hash",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter from date (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to date (RFC3339)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Show all versions per object_id (default: false, latest only)",
+                        "name": "expand_history",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Results per page (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/database.PublishHistoryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/statistics/costs": {
             "get": {
                 "description": "Retrieves transaction fee statistics including total fees, averages, min/max values, and slot information.",
@@ -561,6 +634,60 @@
                     "type": "integer"
                 }
             }
+        },
+        "database.PublishHistoryResult": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/database.PublishRecord"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "database.PublishRecord": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "object"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "objectId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/database.PublishStatus"
+                },
+                "txHash": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.PublishStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "confirmed"
+            ],
+            "x-enum-varnames": [
+                "PublishStatusPending",
+                "PublishStatusConfirmed"
+            ]
         },
         "database.ValueHashWithTimestamp": {
             "type": "object",

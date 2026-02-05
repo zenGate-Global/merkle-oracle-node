@@ -112,8 +112,9 @@ func Start(
 	// Statistics endpoints
 	router.GET("/statistics/costs", handleGetCostStatistics)
 
-	// Publish endpoint
+	// Publish endpoints
 	router.POST("/publish", handlePublish)
+	router.GET("/publish/history", handlePublishHistory)
 
 	// Generate and setup API docs
 	generateScalarDocs()
@@ -652,4 +653,70 @@ func handlePublish(c *gin.Context) {
 	case <-time.After(60 * time.Second):
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timed out"})
 	}
+}
+
+// handlePublishHistory godoc
+// @Summary      Get Publish History
+// @Description  Returns records of data published via POST /publish. By default returns the latest version per object_id. Set expand_history=true to see all versions.
+// @Tags         system
+// @Produce      json
+// @Param        object_id       query  string  false  "Filter by object ID"
+// @Param        tx_hash         query  string  false  "Filter by transaction hash"
+// @Param        from            query  string  false  "Filter from date (RFC3339)"
+// @Param        to              query  string  false  "Filter to date (RFC3339)"
+// @Param        expand_history  query  bool    false  "Show all versions per object_id (default: false, latest only)"
+// @Param        limit           query  int     false  "Results per page (default 50)"
+// @Param        offset          query  int     false  "Pagination offset (default 0)"
+// @Success      200  {object}  database.PublishHistoryResult
+// @Failure      400  {object}  map[string]string
+// @Router       /publish/history [get]
+func handlePublishHistory(c *gin.Context) {
+	db := c.MustGet("db").(*database.Database)
+
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+
+	offset := 0
+	if o := c.Query("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	filter := database.PublishHistoryFilter{
+		ObjectID:      c.Query("object_id"),
+		TxHash:        c.Query("tx_hash"),
+		ExpandHistory: c.Query("expand_history") == "true",
+		Limit:         limit,
+		Offset:        offset,
+	}
+
+	if from := c.Query("from"); from != "" {
+		t, err := time.Parse(time.RFC3339, from)
+		if err != nil {
+			BadRequest(c, fmt.Errorf("invalid 'from' date: %w", err))
+			return
+		}
+		filter.From = &t
+	}
+	if to := c.Query("to"); to != "" {
+		t, err := time.Parse(time.RFC3339, to)
+		if err != nil {
+			BadRequest(c, fmt.Errorf("invalid 'to' date: %w", err))
+			return
+		}
+		filter.To = &t
+	}
+
+	result, err := db.QueryPublishHistory(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
