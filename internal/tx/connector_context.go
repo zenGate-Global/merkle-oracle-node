@@ -226,11 +226,12 @@ func (b *ConnectorContext) GetUtxoFromRef(
 
 func (b *ConnectorContext) EvaluateTx(
 	txBytes []byte,
+	additionalUtxos []UTxO.UTxO,
 ) (map[string]Redeemer.ExecutionUnits, error) {
 	eval, err := b.provider.EvaluateTx(
 		context.Background(),
 		txBytes,
-		[]UTxO.UTxO{},
+		additionalUtxos,
 	)
 	if err != nil {
 		b.logger.Errorf("error evaluating tx: %v", err)

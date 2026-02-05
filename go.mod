@@ -178,7 +178,7 @@ require (
 	gorm.io/datatypes v1.2.7
 )
 
-replace github.com/Salvionied/apollo => github.com/zenGate-Global/apollo v1.1.1-0.20250625074329-37f3a9174ddd
+replace github.com/Salvionied/apollo => github.com/zenGate-Global/apollo v1.1.1-0.20251028065541-124a95d4dc55
 
 replace github.com/zde37/pinata-go-sdk => github.com/zenGate-Global/pinata-go-sdk v0.0.0-20240826130715-09fba9a6bf2e
 
