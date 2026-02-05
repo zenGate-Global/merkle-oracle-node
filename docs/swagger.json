@@ -392,6 +392,67 @@
                 }
             }
         },
+        "/publish": {
+            "post": {
+                "description": "Publishes custom oracle data on-chain immediately, bypassing the updateInterval. Items may include \"object_id\"; if missing it will be generated.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Publish Custom Data Immediately",
+                "parameters": [
+                    {
+                        "description": "Oracle data to publish",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.PublishRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PublishResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Chain event processor not available",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/statistics/costs": {
             "get": {
                 "description": "Retrieves transaction fee statistics including total fees, averages, min/max values, and slot information.",
@@ -426,6 +487,35 @@
         }
     },
     "definitions": {
+        "api.PublishRequest": {
+            "type": "object",
+            "required": [
+                "data"
+            ],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
+        "api.PublishResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "txHash": {
+                    "type": "string"
+                }
+            }
+        },
         "database.CostStatistics": {
             "type": "object",
             "properties": {

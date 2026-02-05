@@ -1,5 +1,24 @@
 basePath: /
 definitions:
+  api.PublishRequest:
+    properties:
+      data:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    required:
+    - data
+    type: object
+  api.PublishResponse:
+    properties:
+      error:
+        type: string
+      success:
+        type: boolean
+      txHash:
+        type: string
+    type: object
   database.CostStatistics:
     properties:
       averageFee:
@@ -307,6 +326,47 @@ paths:
       summary: Get Deleted Object IDs
       tags:
       - objects
+  /publish:
+    post:
+      consumes:
+      - application/json
+      description: Publishes custom oracle data on-chain immediately, bypassing the
+        updateInterval. Items may include "object_id"; if missing it will be generated.
+      parameters:
+      - description: Oracle data to publish
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.PublishRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PublishResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Chain event processor not available
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Publish Custom Data Immediately
+      tags:
+      - system
   /statistics/costs:
     get:
       consumes:

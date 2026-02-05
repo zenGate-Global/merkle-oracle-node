@@ -14,6 +14,7 @@ import (
 	"zenGate-Global/merkle-oracle-node/internal/logging"
 	"zenGate-Global/merkle-oracle-node/internal/metrics"
 	"zenGate-Global/merkle-oracle-node/internal/oprovider"
+	"zenGate-Global/merkle-oracle-node/internal/strategy"
 	"zenGate-Global/merkle-oracle-node/internal/types"
 
 	connector "github.com/zenGate-Global/cardano-connector-go"
@@ -266,6 +267,11 @@ func (sm *StrategyManagerActor) loadStrategy(
 
 	// Send parent PID to the strategy so it can communicate back
 	sm.engine.Send(childPID, types.SetParentPID{PID: sm.selfPID})
+
+	if strategyCfg.Kind == "chain-event-processor" {
+		strategy.SetGlobalActorRegistry(sm.engine, childPID)
+		sm.logger.Debugw("set global actor registry for chain-event-processor", "pid", childPID.String())
+	}
 
 	sm.logger.Infow(
 		"strategy instance spawned",
