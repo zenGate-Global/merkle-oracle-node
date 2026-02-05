@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -34,11 +35,20 @@ var scalarHTML []byte
 var scalarHTMLGenerationErr error
 
 func generateScalarDocs() {
-
-	specURL := "/docs/swagger.json"
+	specBytes, err := os.ReadFile("./docs/swagger.json")
+	if err != nil {
+		scalarHTMLGenerationErr = fmt.Errorf(
+			"failed to read swagger.json: %w",
+			err,
+		)
+		logging.GetLogger().
+			Error("Failed to read swagger.json", "error", scalarHTMLGenerationErr)
+		scalarHTML = nil
+		return
+	}
 
 	htmlContent, err := scalargo.NewV2(
-		scalargo.WithSpecURL(specURL),
+		scalargo.WithSpecBytes(specBytes),
 		scalargo.WithTheme(scalargo.ThemeBluePlanet),
 		scalargo.WithMetaDataOpts(
 			scalargo.WithTitle("Merkle Oracle Node API"),
