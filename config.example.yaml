@@ -1,5 +1,5 @@
 storage:
-  url: "postgresql://postgres:postgres@localhost:5432/postgres"
+  url: "postgresql://postgres:postgres@postgres:5432/postgres"
 
 indexer:
   address: ""

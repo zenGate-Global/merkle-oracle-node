@@ -1,16 +1,24 @@
 services:
+  init:
+    image: alpine:latest
+    volumes:
+      - ./assets:/data/assets
+    entrypoint: sh -c "mkdir -p /data/assets/logs && chown -R 65532:65532 /data/assets && chmod -R 755 /data/assets"
+
   merkle-oracle-node:
     build:
       context: .
       dockerfile: Dockerfile
     volumes:
       - ./config.yaml:/data/config.yaml
+      - ./gcp.json:/data/gcp.json:ro
       - ./assets:/data/assets
-    command: -config ./config.yaml
     restart: unless-stopped
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "127.0.0.1:9090:9090"
       - "127.0.0.1:9091:9091"
@@ -19,6 +27,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
   postgres:
     image: postgres:15-alpine
     ports:
@@ -29,6 +38,11 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
 volumes:
   storage_data:

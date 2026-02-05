@@ -2,7 +2,9 @@ FROM ghcr.io/blinklabs-io/go:1.24.4-1 AS build
 
 WORKDIR /code
 COPY . .
-RUN make build
+RUN go install github.com/itchyny/gojq/cmd/gojq@latest && \
+    ln -s $(go env GOPATH)/bin/gojq /usr/local/bin/jq && \
+    make build
 
 FROM alpine:latest AS setup
 # Create the directory structure with proper permissions for the non-root user
@@ -27,4 +29,4 @@ WORKDIR /data
 # Switch back to non-root user
 USER 65532
 
-ENTRYPOINT ["node", "-config", "/etc/config/config.yaml"]
+ENTRYPOINT ["node", "-config", "/data/config.yaml"]
