@@ -283,6 +283,7 @@ func Migrate(db *gorm.DB) error {
 			&Key{},
 			&TrieOperation{},
 			&TrieOperationKey{},
+			&PublishRecord{},
 		); err != nil {
 			return err
 		}

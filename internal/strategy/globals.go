@@ -6,6 +6,7 @@ import (
 	"zenGate-Global/merkle-oracle-node/internal/tx"
 
 	apolloUTxO "github.com/Salvionied/apollo/serialization/UTxO"
+	"github.com/anthdm/hollywood/actor"
 )
 
 type PendingTxInfo struct {
@@ -38,6 +39,10 @@ var (
 
 	//nolint:unused
 	txBuildMutex sync.Mutex
+
+	globalEngine                 *actor.Engine
+	globalChainEventProcessorPID *actor.PID
+	actorRegistryMutex           sync.RWMutex
 )
 
 // CheckInputConflicts checks if any of the provided inputs conflict with pending transactions
@@ -157,4 +162,17 @@ func ClearLatestTrie() {
 	latestTrieMutex.Lock()
 	defer latestTrieMutex.Unlock()
 	latestTrie = nil
+}
+
+func SetGlobalActorRegistry(engine *actor.Engine, chainEventProcessorPID *actor.PID) {
+	actorRegistryMutex.Lock()
+	defer actorRegistryMutex.Unlock()
+	globalEngine = engine
+	globalChainEventProcessorPID = chainEventProcessorPID
+}
+
+func GetGlobalActorRegistry() (*actor.Engine, *actor.PID) {
+	actorRegistryMutex.RLock()
+	defer actorRegistryMutex.RUnlock()
+	return globalEngine, globalChainEventProcessorPID
 }

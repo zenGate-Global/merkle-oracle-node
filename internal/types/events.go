@@ -60,3 +60,22 @@ type IndexerRestartComplete struct {
 	Success bool
 	Error   string
 }
+
+// ImmediatePublishRequest is sent from the API to trigger an immediate on-chain publish
+// with custom oracle data, bypassing the updateInterval check.
+type ImmediatePublishRequest struct {
+	// Data is the oracle data payload to publish. Each map should contain:
+	// - "object_id" (string): unique identifier for the object
+	// - Additional key-value pairs representing the object's data
+	// Example: [{"object_id": "abc123", "price": 100, "name": "item"}]
+	Data []map[string]interface{}
+	// ResponseChan receives the publish result (optional, for synchronous calls)
+	ResponseChan chan ImmediatePublishResponse
+}
+
+// ImmediatePublishResponse contains the result of an immediate publish request.
+type ImmediatePublishResponse struct {
+	Success bool   `json:"success"`
+	TxHash  string `json:"txHash,omitempty"`
+	Error   string `json:"error,omitempty"`
+}

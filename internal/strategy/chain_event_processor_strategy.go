@@ -520,6 +520,7 @@ type ChainEventProcessorActor struct {
 
 	trieRootMismatchCount           int
 	lastSuccessfullyIndexedSlot     uint64
+	lastSuccessfullyIndexedBlockNum uint64
 	lastSucessfullyIndexedBlockHash string
 
 	processedBlockMap map[BlockKey]struct{}
@@ -551,6 +552,7 @@ func NewChainEventProcessorStrategy(
 			failedAtSlot:                    0,
 			trieRootMismatchCount:           0,
 			lastSuccessfullyIndexedSlot:     cfg.StartBlockSlot,
+			lastSuccessfullyIndexedBlockNum: 0,
 			lastSucessfullyIndexedBlockHash: cfg.StartBlockHash,
 			processedBlockMap:               make(map[BlockKey]struct{}),
 			blockTransactionCountMap:        make(map[BlockKey]uint64),
@@ -748,6 +750,7 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 					return fmt.Errorf("block processing: %w", err)
 				}
 				s.lastSuccessfullyIndexedSlot = msg.EventContext.SlotNumber
+				s.lastSuccessfullyIndexedBlockNum = msg.EventContext.BlockNumber
 				s.lastSucessfullyIndexedBlockHash = msg.EventTransaction.BlockHash
 			}
 			return nil
@@ -811,6 +814,11 @@ func (s *ChainEventProcessorActor) Receive(c *actor.Context) {
 		metrics.RecordActorMessage("ChainEventProcessor", "SetParentPID")
 		s.logger.Debugw("parent PID set", "pid", msg.PID)
 		s.parentPID = msg.PID
+
+	case types.ImmediatePublishRequest:
+		metrics.RecordActorMessage("ChainEventProcessor", "ImmediatePublishRequest")
+		s.logger.Infow("received ImmediatePublishRequest", "data_count", len(msg.Data))
+		go s.handleImmediatePublish(msg)
 
 	default:
 		metrics.RecordActorMessage("ChainEventProcessor", "UnknownMessage")
@@ -1169,6 +1177,195 @@ func (s *ChainEventProcessorActor) processBlockTipReached(
 	return nil
 }
 
+func (s *ChainEventProcessorActor) handleImmediatePublish(req types.ImmediatePublishRequest) {
+	s.logger.Info("Processing immediate publish request...")
+
+	respond := func(success bool, txHash, errMsg string) {
+		if req.ResponseChan != nil {
+			req.ResponseChan <- types.ImmediatePublishResponse{
+				Success: success,
+				TxHash:  txHash,
+				Error:   errMsg,
+			}
+		}
+	}
+
+	if len(req.Data) == 0 {
+		respond(false, "", "data payload is empty")
+		return
+	}
+
+	if s.lastSuccessfullyIndexedBlockNum == 0 || s.lastSuccessfullyIndexedSlot == 0 {
+		respond(false, "", "indexer not synced; try again after a block is processed")
+		return
+	}
+
+	memTrie, err := s.db.GetInMemoryTrie()
+	if err != nil {
+		s.logger.Errorf("immediate publish: get in-memory trie: %v", err)
+		respond(false, "", fmt.Sprintf("failed to get trie: %v", err))
+		return
+	}
+
+	validatorOutRef, err := s.getOrFetchValidatorUTxO(context.Background())
+	if err != nil {
+		s.logger.Errorf("immediate publish: fetch validator UTXO: %v", err)
+		respond(false, "", fmt.Sprintf("failed to fetch validator UTxO: %v", err))
+		return
+	}
+
+	decodedValidatorDatum, _, err := s.decodeValidatorDatumFromUTxO(validatorOutRef)
+	if err != nil {
+		s.logger.Errorf("immediate publish: decode validator datum: %v", err)
+		respond(false, "", fmt.Sprintf("failed to decode validator datum: %v", err))
+		return
+	}
+
+	// TODO: This may be problematic if we need to spam this endpoint, perhaps possible to skip this if we do
+	// chained txns, not sure what the bottleneck is yet
+	if GetPendingTransactionCount() > 0 {
+		respond(false, "", "another transaction is pending; please wait")
+		return
+	}
+
+	ipfsCidHex := hex.EncodeToString(decodedValidatorDatum.IpfsCid)
+	ipfsCidDecoded := tx.DecodeHexIfValid(ipfsCidHex)
+	previousFileReference := ""
+	if ipfsCidHex != config.NullTrieHash {
+		previousFileReference = ipfsCidDecoded
+	}
+
+	oracleDataMap := make([]map[string]interface{}, len(req.Data))
+	for i, item := range req.Data {
+		m := make(map[string]interface{}, len(item))
+		for k, v := range item {
+			m[k] = v
+		}
+		if _, ok := m["object_id"]; !ok {
+			m["object_id"] = uuid.New().String()
+			s.logger.Debugf("Generated object_id for immediate publish item %d: %s", i, m["object_id"])
+		}
+		oracleDataMap[i] = m
+	}
+
+	currentStateMap, err := s.db.GetCurrentStateMap(context.Background())
+	if err != nil {
+		s.logger.Errorf("immediate publish: get current state map: %v", err)
+		respond(false, "", fmt.Sprintf("failed to get current state: %v", err))
+		return
+	}
+
+	insB, updB, delB, ins, ups, dels := s.diffTrieOpsCore(oracleDataMap, currentStateMap)
+	s.logger.Infow("Immediate publish trie operations",
+		"insertions", len(ins), "updates", len(ups), "deletions", len(dels))
+
+	prevMerkleRootHex := hex.EncodeToString(memTrie.Hash())
+	currentSlot := s.lastSuccessfullyIndexedSlot
+
+	uploadPayload := struct {
+		Data     []map[string]interface{} `json:"data"`
+		TrieData struct {
+			Insertions []KVHex  `json:"insertions"`
+			Updates    []KVHex  `json:"updates"`
+			Deletions  []KeyHex `json:"deletions"`
+		} `json:"trieData"`
+		CurrentMerkleRoot     string `json:"currentMerkleRoot"`
+		PreviousMerkleRoot    string `json:"previousMerkleRoot"`
+		PreviousFileReference string `json:"previousFileReference"`
+		TrieLibrary           string `json:"trieLibrary"`
+		CreatedAt             int64  `json:"createdAt"`
+	}{
+		Data:                  oracleDataMap,
+		PreviousMerkleRoot:    prevMerkleRootHex,
+		PreviousFileReference: previousFileReference,
+		TrieLibrary:           version.TrieLibrary,
+		CreatedAt:             time.Now().Unix(),
+	}
+	uploadPayload.TrieData.Insertions = ins
+	uploadPayload.TrieData.Updates = ups
+	uploadPayload.TrieData.Deletions = dels
+
+	if err := s.applyTrieOperations(memTrie, insB, updB, delB, currentSlot); err != nil {
+		s.logger.Errorf("immediate publish: apply trie ops: %v", err)
+		respond(false, "", fmt.Sprintf("failed to apply trie operations: %v", err))
+		return
+	}
+
+	updatedTrieRoot := memTrie.Hash()
+	uploadPayload.CurrentMerkleRoot = hex.EncodeToString(updatedTrieRoot)
+	s.logger.Infof("Immediate publish updated trie root: %x", updatedTrieRoot)
+
+	payloadBytes, err := json.Marshal(uploadPayload)
+	if err != nil {
+		s.logger.Errorf("immediate publish: marshal payload: %v", err)
+		respond(false, "", fmt.Sprintf("failed to marshal payload: %v", err))
+		return
+	}
+
+	s.logger.Infof("Uploading immediate publish data to cloud, size: %d bytes", len(payloadBytes))
+	cloudRef, err := s.cloud.Upload(payloadBytes)
+	if err != nil {
+		s.logger.Errorf("immediate publish: cloud upload: %v", err)
+		respond(false, "", fmt.Sprintf("failed to upload to cloud: %v", err))
+		return
+	}
+	s.logger.Infof("Immediate publish uploaded with reference: %s", string(cloudRef))
+
+	cloudRefBytes := []byte(string(cloudRef))
+
+	txObj, err := tx.BuildRecreateTx(s.appCfg, s.provider, validatorOutRef, updatedTrieRoot, cloudRefBytes)
+	if err != nil {
+		s.logger.Errorf("immediate publish: build tx: %v", err)
+		respond(false, "", fmt.Sprintf("failed to build transaction: %v", err))
+		return
+	}
+
+	inputs := make([]tx.InputKey, 0, len(txObj.TransactionBody.Inputs))
+	inputMap := make(map[tx.InputKey]struct{}, len(txObj.TransactionBody.Inputs))
+	for _, in := range txObj.TransactionBody.Inputs {
+		ik := tx.InputKey{
+			TxId:  hex.EncodeToString(in.TransactionId),
+			Index: in.Index,
+		}
+		inputs = append(inputs, ik)
+		inputMap[ik] = struct{}{}
+	}
+
+	if hasConflict, conflicting := CheckInputConflicts(inputs...); hasConflict {
+		s.logger.Warnw("immediate publish: input conflict", "conflicting_tx", conflicting)
+		respond(false, "", fmt.Sprintf("input conflict with pending tx: %s", conflicting))
+		return
+	}
+
+	txBytes, err := txObj.Bytes()
+	if err != nil {
+		s.logger.Errorf("immediate publish: tx bytes: %v", err)
+		respond(false, "", fmt.Sprintf("failed to serialize tx: %v", err))
+		return
+	}
+
+	txHash, err := provider.SubmitTx(s.appCfg, s.provider, txBytes)
+	if err != nil {
+		s.logger.Errorf("immediate publish: submit tx: %v", err)
+		respond(false, "", fmt.Sprintf("failed to submit tx: %v", err))
+		return
+	}
+
+	s.logger.Infof("Immediate publish transaction submitted: %s", txHash)
+	AddPendingTransaction(txHash, inputMap, s.lastSuccessfullyIndexedBlockNum)
+
+	if err := s.db.CreatePublishRecords(context.Background(), txHash, oracleDataMap); err != nil {
+		s.logger.Errorf("immediate publish: save publish records: %v", err)
+	}
+
+	// The publish tx consumed the old validator UTxO; clear the cache so the
+	// regular flow re-fetches the (now-different) on-chain UTxO instead of
+	// reusing the stale one.
+	ClearGlobalValidatorUtxo()
+
+	respond(true, txHash, "")
+}
+
 func (s *ChainEventProcessorActor) processTransactionEvent(
 	txEvent types.IndexerTransactionEvent,
 ) error {
@@ -1190,6 +1387,10 @@ func (s *ChainEventProcessorActor) processTransactionEvent(
 			txHash,
 			txEvent.EventContext.BlockNumber-pendingTxInfo.submissionBlockHeight,
 		)
+
+		if err := s.db.ConfirmPublishRecords(context.Background(), txHash); err != nil {
+			s.logger.Errorf("failed to confirm publish records for tx %s: %v", txHash, err)
+		}
 	}
 
 	redeemers := txEvent.EventTransaction.Witnesses.Redeemers()
