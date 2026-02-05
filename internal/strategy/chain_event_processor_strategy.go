@@ -1354,6 +1354,11 @@ func (s *ChainEventProcessorActor) handleImmediatePublish(req types.ImmediatePub
 	s.logger.Infof("Immediate publish transaction submitted: %s", txHash)
 	AddPendingTransaction(txHash, inputMap, s.lastSuccessfullyIndexedBlockNum)
 
+	// The publish tx consumed the old validator UTxO; clear the cache so the
+	// regular flow re-fetches the (now-different) on-chain UTxO instead of
+	// reusing the stale one.
+	ClearGlobalValidatorUtxo()
+
 	respond(true, txHash, "")
 }
 
