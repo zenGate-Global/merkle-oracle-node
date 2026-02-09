@@ -30,7 +30,7 @@ require (
 	github.com/zde37/pinata-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/zenGate-Global/cardano-connector-go v0.2.1-0.20260204172124-229d01690488
 	go.uber.org/automaxprocs v1.6.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.46.0
 	google.golang.org/api v0.257.0
 	gopkg.in/yaml.v2 v2.4.0
